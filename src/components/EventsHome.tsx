@@ -24,10 +24,12 @@ import {
   faBoxOpen,
   faCalendarDay,
   faPen,
-  faPlus,
   faTrash,
-  faUsers,
 } from '../ui/icons';
+import { ListRow } from './shell/ListRow';
+import { BottomSheet } from './shell/BottomSheet';
+import { PrimaryAction } from './shell/PrimaryAction';
+import { SegmentedPill } from './shell/SegmentedPill';
 
 const FILTERS: EventFilter[] = ['all', 'open', 'archived'];
 
@@ -44,7 +46,9 @@ export function EventsHome() {
 
   const [nameDraft, setNameDraft] = useState('');
   const [createError, setCreateError] = useState<AppError | null>(null);
+  const [creating, setCreating] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const hasAnyEvent = useAppStore((state) => state.events.length > 0);
 
@@ -62,69 +66,84 @@ export function EventsHome() {
 
     setNameDraft('');
     setCreateError(null);
+    setCreating(false);
   }
 
-  function handleDelete(event: SplitEvent) {
-    if (window.confirm(DELETE_EVENT_CONFIRMATION)) {
-      deleteEvent(event.id);
-    }
+  function closeCreate(): void {
+    setCreating(false);
+    setNameDraft('');
+    setCreateError(null);
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-text">{EVENTS_HEADING}</h2>
-
-        <form onSubmit={handleCreate} className="flex gap-2" noValidate>
-          <label htmlFor="new-event-name" className="sr-only">
-            Event name
-          </label>
-          <input
-            id="new-event-name"
-            type="text"
-            value={nameDraft}
-            placeholder="Event name"
-            maxLength={EVENT_NAME_MAX_LENGTH + 1}
-            aria-invalid={createError !== null}
-            aria-describedby={createError ? 'create-event-error' : undefined}
-            onChange={(event) => setNameDraft(event.target.value)}
-            className="min-h-11 flex-1 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
-          />
-          <button
-            type="submit"
-            className="flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-primary-contrast"
-          >
-            <FontAwesomeIcon icon={faPlus} />
-            <span className="text-sm font-semibold">{CREATE_EVENT_LABEL}</span>
+      <BottomSheet open={creating} title="New event" onClose={closeCreate}>
+        <form onSubmit={handleCreate} className="flex flex-col gap-3" noValidate>
+          <div className="md-field-wrap">
+            <input
+              id="new-event-name"
+              type="text"
+              value={nameDraft}
+              placeholder=" "
+              maxLength={EVENT_NAME_MAX_LENGTH + 1}
+              aria-invalid={createError !== null}
+              aria-describedby={createError ? 'create-event-error' : undefined}
+              onChange={(event) => setNameDraft(event.target.value)}
+              className="mobile-input md-field"
+            />
+            <label htmlFor="new-event-name" className="md-field-label">Event name</label>
+          </div>
+          {createError && (
+            <p id="create-event-error" role="alert" className="text-sm text-danger-fg">
+              {ERROR_MESSAGES[createError]}
+            </p>
+          )}
+          <button type="submit" className="mobile-target md-filled-button">
+            {CREATE_EVENT_LABEL}
           </button>
         </form>
-
-        {createError && (
-          <p id="create-event-error" role="alert" className="text-sm text-danger-fg">
-            {ERROR_MESSAGES[createError]}
-          </p>
-        )}
+      </BottomSheet>
+      <BottomSheet open={deletingId !== null} title="Delete event" onClose={() => setDeletingId(null)}>
+        <p className="mb-4">{DELETE_EVENT_CONFIRMATION}</p>
+        <div className="flex gap-2">
+          <button type="button" className="mobile-target md-outline-button flex-1" onClick={() => setDeletingId(null)}>Cancel</button>
+          <button type="button" className="mobile-target md-tonal-button flex-1 bg-danger-bg text-danger-fg" onClick={() => {
+            if (deletingId) deleteEvent(deletingId);
+            setDeletingId(null);
+          }}>Confirm deletion</button>
+        </div>
+      </BottomSheet>
+      <BottomSheet open={renamingId !== null} title="Rename event" onClose={() => setRenamingId(null)}>
+        {events.filter((event) => event.id === renamingId).map((event) => (
+          <RenameEventForm
+            key={event.id}
+            event={event}
+            onCancel={() => setRenamingId(null)}
+            onRename={(raw) => {
+              if (renameEvent(event.id, raw)) {
+                setRenamingId(null);
+                return null;
+              }
+              return useAppStore.getState().lastError;
+            }}
+          />
+        ))}
+      </BottomSheet>
+      <section className="flex flex-col gap-2">
+        <h2 className="md-section-title">{EVENTS_HEADING}</h2>
       </section>
 
       {hasAnyEvent && (
-        <div role="group" aria-label="Filter events" className="flex gap-2">
-          {FILTERS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={filter === option}
-              onClick={() => setEventFilter(option)}
-              className={[
-                'min-h-11 flex-1 rounded-lg border px-3 text-sm font-semibold',
-                filter === option
-                  ? 'border-primary bg-primary text-primary-contrast'
-                  : 'border-border bg-surface text-text-muted',
-              ].join(' ')}
-            >
-              {EVENT_FILTER_LABELS[option]}
-            </button>
-          ))}
-        </div>
+        <SegmentedPill
+          label="Filter events"
+          options={FILTERS.map((option) => ({
+            value: option,
+            label: EVENT_FILTER_LABELS[option],
+          }))}
+          value={filter}
+          onSelect={setEventFilter}
+          selectionRole="button"
+        />
       )}
 
       {events.length === 0 ? (
@@ -133,120 +152,53 @@ export function EventsHome() {
           {NO_EVENTS_MESSAGE}
         </p>
       ) : (
-        <ul aria-label="Events" className="flex flex-col gap-2">
+        <ul aria-label="Events" className="md-card divide-y divide-divider">
           {events.map((event) => (
-            <li
+            <ListRow
               key={event.id}
-              data-testid={`event-${event.id}`}
-              className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-3 py-2"
-            >
-              {renamingId === event.id ? (
-                <RenameEventForm
-                  event={event}
-                  onCancel={() => setRenamingId(null)}
-                  onRename={(raw) => {
-                    if (renameEvent(event.id, raw)) {
-                      setRenamingId(null);
-                      return null;
-                    }
-
-                    return useAppStore.getState().lastError;
-                  }}
-                />
-              ) : (
-                <>
-                  <div className="flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openEvent(event.id)}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <span className="block truncate text-base font-semibold">
-                        {event.name}
-                      </span>
-                    </button>
-                    <span
-                      data-testid={`status-${event.id}`}
-                      className={[
-                        'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold',
-                        event.status === 'open'
-                          ? 'bg-success-bg text-success-fg'
-                          : 'bg-surface-muted text-text-muted',
-                      ].join(' ')}
-                    >
-                      {EVENT_STATUS_LABELS[event.status]}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-                    <span className="flex items-center gap-1">
-                      <FontAwesomeIcon icon={faCalendarDay} />
-                      {formatEventDate(event.createdAt)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <FontAwesomeIcon icon={faUsers} />
-                      {participantCountLabel(event.participants.length)}
-                    </span>
-                    <span
-                      data-testid={`total-${event.id}`}
-                      className="font-semibold text-text"
-                    >
-                      {formatCents(eventTotalCents(event))}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1">
-                    <button
-                      type="button"
-                      onClick={() => openEvent(event.id)}
-                      className="min-h-11 rounded-lg bg-surface-muted px-3 text-sm font-semibold text-text"
-                    >
-                      Open
-                    </button>
-                    {event.status === 'open' && (
-                      <button
-                        type="button"
-                        aria-label={`Rename ${event.name}`}
-                        onClick={() => setRenamingId(event.id)}
-                        className="min-h-11 min-w-11 rounded-lg px-3 text-text-muted hover:bg-surface-muted"
-                      >
-                        <FontAwesomeIcon icon={faPen} />
-                      </button>
-                    )}
-                    {event.status === 'open' ? (
-                      <button
-                        type="button"
-                        aria-label={`Archive ${event.name}`}
-                        onClick={() => archiveEvent(event.id)}
-                        className="min-h-11 min-w-11 rounded-lg px-3 text-text-muted hover:bg-surface-muted"
-                      >
-                        <FontAwesomeIcon icon={faBoxArchive} />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        aria-label={`Unarchive ${event.name}`}
-                        onClick={() => unarchiveEvent(event.id)}
-                        className="min-h-11 min-w-11 rounded-lg px-3 text-text-muted hover:bg-surface-muted"
-                      >
-                        <FontAwesomeIcon icon={faBoxOpen} />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={`Delete ${event.name}`}
-                      onClick={() => handleDelete(event)}
-                      className="min-h-11 min-w-11 rounded-lg px-3 text-text-muted hover:bg-surface-muted hover:text-danger-fg"
-                    >
-                      <FontAwesomeIcon icon={faTrash} />
-                    </button>
-                  </div>
-                </>
-              )}
-            </li>
+              testId={`event-${event.id}`}
+              icon={faCalendarDay}
+              primary={event.name}
+              amount={<span data-testid={`total-${event.id}`}>{formatCents(eventTotalCents(event))}</span>}
+              secondary={<>
+                <span data-testid={`status-${event.id}`}>{EVENT_STATUS_LABELS[event.status]}</span>
+                <span className="block">{formatEventDate(event.createdAt)}</span>
+                <span className="block">{participantCountLabel(event.participants.length)}</span>
+              </>}
+              onSelect={() => openEvent(event.id)}
+              actions={[
+                ...(event.status === 'open' ? [{
+                  label: `Rename ${event.name}`,
+                  text: 'Rename',
+                  icon: faPen,
+                  onClick: () => setRenamingId(event.id),
+                }] : []),
+                event.status === 'open' ? {
+                  label: `Archive ${event.name}`,
+                  text: 'Archive',
+                  icon: faBoxArchive,
+                  onClick: () => archiveEvent(event.id),
+                } : {
+                  label: `Unarchive ${event.name}`,
+                  text: 'Restore',
+                  icon: faBoxOpen,
+                  onClick: () => unarchiveEvent(event.id),
+                },
+                {
+                  label: `Delete ${event.name}`,
+                  text: 'Delete',
+                  icon: faTrash,
+                  destructive: true,
+                  onClick: () => setDeletingId(event.id),
+                },
+              ]}
+            />
           ))}
         </ul>
       )}
+      {!creating && <PrimaryAction aboveTabBar={false} onClick={() => setCreating(true)}>
+        {CREATE_EVENT_LABEL}
+      </PrimaryAction>}
     </div>
   );
 }
@@ -270,18 +222,19 @@ function RenameEventForm({ event, onRename, onCancel }: RenameEventFormProps) {
         setError(onRename(draft));
       }}
     >
-      <label htmlFor={`rename-${event.id}`} className="sr-only">
-        Event name
-      </label>
-      <input
-        id={`rename-${event.id}`}
-        type="text"
-        value={draft}
-        maxLength={EVENT_NAME_MAX_LENGTH + 1}
-        aria-invalid={error !== null}
-        onChange={(changed) => setDraft(changed.target.value)}
-        className="min-h-11 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
-      />
+      <div className="md-field-wrap">
+        <input
+          id={`rename-${event.id}`}
+          type="text"
+          value={draft}
+          placeholder=" "
+          maxLength={EVENT_NAME_MAX_LENGTH + 1}
+          aria-invalid={error !== null}
+          onChange={(changed) => setDraft(changed.target.value)}
+          className="mobile-input md-field"
+        />
+        <label htmlFor={`rename-${event.id}`} className="md-field-label">Event name</label>
+      </div>
       {error && (
         <p role="alert" className="text-sm text-danger-fg">
           {ERROR_MESSAGES[error]}
@@ -290,14 +243,14 @@ function RenameEventForm({ event, onRename, onCancel }: RenameEventFormProps) {
       <div className="flex gap-2">
         <button
           type="submit"
-          className="min-h-11 flex-1 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-contrast"
+          className="mobile-target md-filled-button flex-1"
         >
           Save name
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="min-h-11 flex-1 rounded-lg border border-border px-3 text-sm font-semibold text-text-muted"
+          className="mobile-target md-outline-button flex-1"
         >
           Cancel
         </button>

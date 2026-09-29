@@ -24,7 +24,7 @@ export function TabBar({ activeTab, disabledTabs, onSelect }: TabBarProps) {
     <nav
       role="tablist"
       aria-label="Sections"
-      className="grid grid-cols-3 gap-1 rounded-xl bg-surface-muted p-1"
+      className="fixed bottom-0 left-1/2 z-10 grid w-full max-w-[480px] -translate-x-1/2 grid-cols-3 border-t border-divider bg-surface pb-safe-bottom pl-[calc(var(--safe-left)+0.5rem)] pr-[calc(var(--safe-right)+0.5rem)]"
     >
       {TABS.map((tab) => {
         const isDisabled = disabledTabs.includes(tab.id);
@@ -47,15 +47,20 @@ export function TabBar({ activeTab, disabledTabs, onSelect }: TabBarProps) {
               }
             }}
             className={[
-              'min-h-11 rounded-lg px-2 py-2 text-sm font-medium transition-colors',
-              isActive ? 'bg-surface text-text shadow-sm' : 'text-text-muted',
+              'mobile-target m-1 flex flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-1 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary',
+              isActive ? 'bg-surface-muted text-primary' : 'text-text-muted',
               isDisabled ? 'cursor-not-allowed opacity-40' : 'hover:text-text',
             ].join(' ')}
           >
-            {tab.label}
+            <span className={`flex h-7 w-14 items-center justify-center rounded-full ${isActive ? 'bg-primary-container text-on-primary-container' : ''}`}>
+              <FontAwesomeIcon icon={{ group: faUsers, expenses: faReceipt, settlement: faCoins }[tab.id]} />
+            </span>
+            <span>{tab.label}</span>
           </button>
         );
       })}
     </nav>
   );
 }
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faCoins, faReceipt, faUsers } from '../ui/icons';

@@ -58,7 +58,51 @@ describe('event sharing', () => {
       value: { writeText },
     });
 
+    describe('mobile navigation', () => {
+      it('pushes an opened event and holds the popped screen until animationend', async () => {
+        const user = userEvent.setup();
+        const id = createEvent('Dinner');
+        useAppStore.getState().closeEvent();
+        render(<App />);
+        await user.click(screen.getByTestId(`event-${id}`).querySelector('button')!);
+        expect(screen.getByRole('tabpanel').parentElement).toHaveClass('animate-push-in');
+        await user.click(screen.getByRole('button', { name: 'Back to events' }));
+        const exiting = screen.getByTestId('exiting-screen');
+        expect(exiting).toHaveClass('animate-pop-out');
+        expect(screen.getByRole('tabpanel')).toBeInTheDocument();
+        fireEvent.animationEnd(exiting);
+        expect(screen.getByText('Your events')).toBeInTheDocument();
+        expect(screen.queryByTestId('exiting-screen')).toBeNull();
+        expect(useAppStore.getState().activeEventId).toBeNull();
+      });
+
+      it('does not animate screen changes when reduced motion is enabled', async () => {
+        const original = window.matchMedia;
+        window.matchMedia = vi.fn().mockReturnValue({
+          matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+        });
+        try {
+          const id = createEvent('Dinner');
+          useAppStore.getState().closeEvent();
+          render(<App />);
+          await userEvent.setup().click(screen.getByTestId(`event-${id}`).querySelector('button')!);
+          expect(screen.getByRole('tabpanel').parentElement).not.toHaveClass('animate-push-in');
+          await userEvent.setup().click(screen.getByRole('button', { name: 'Back to events' }));
+          expect(screen.queryByTestId('exiting-screen')).toBeNull();
+          expect(useAppStore.getState().activeEventId).toBeNull();
+        } finally {
+          window.matchMedia = original;
+        }
+      });
+    });
+
     render(<App />);
+    const shareButton = screen.getByRole('button', { name: 'Share' });
+    expect(shareButton).toHaveClass('mobile-target', 'md-icon-button');
+    expect(shareButton).not.toHaveClass('md-tonal-button');
+    expect(shareButton).toHaveAttribute('title', 'Share');
+    expect(shareButton).toHaveTextContent('');
+    expect(shareButton.querySelector('svg')).toHaveAttribute('data-icon', 'share-from-square');
     await user.click(screen.getByRole('button', { name: 'Share' }));
 
     expect(writeText).toHaveBeenCalledOnce();

@@ -25,7 +25,7 @@ import {
   transferLabel,
   transferProgressLabel,
 } from '../ui/messages';
-import { CATEGORY_ICONS, faCircleCheck, faTriangleExclamation } from '../ui/icons';
+import { CATEGORY_ICONS, faCheck, faCircleCheck, faCoins, faTriangleExclamation } from '../ui/icons';
 
 export function SettlementTab() {
   const activeEvent = useAppStore(selectActiveEvent);
@@ -79,12 +79,12 @@ export function SettlementTab() {
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-text">Balances</h2>
+          <h2 className="md-section-title">Balances</h2>
           <button
             type="button"
             onClick={exportPdf}
             disabled={expenses.length === 0 || isExporting}
-            className="min-h-11 rounded-lg bg-primary px-3 text-sm font-medium text-primary-contrast disabled:cursor-not-allowed disabled:opacity-50"
+            className="mobile-target md-tonal-button"
           >
             {isExporting ? 'Exporting…' : 'Export PDF'}
           </button>
@@ -102,7 +102,7 @@ export function SettlementTab() {
             {balances.map((balance) => (
               <li
                 key={balance.participantId}
-                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2"
+                className="md-card flex items-center justify-between gap-2 px-4 py-3"
               >
                 <div className="min-w-0">
                   <p className="truncate text-base">{nameOf(balance.participantId)}</p>
@@ -132,7 +132,7 @@ export function SettlementTab() {
 
       {breakdown.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-text">
+          <h2 className="md-section-title">
             {CATEGORY_BREAKDOWN_HEADING}
           </h2>
 
@@ -141,7 +141,7 @@ export function SettlementTab() {
               <li
                 key={row.category}
                 data-testid={`category-total-${row.category}`}
-                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2"
+                className="md-card flex items-center justify-between gap-2 px-4 py-3"
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <FontAwesomeIcon
@@ -173,7 +173,7 @@ export function SettlementTab() {
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-text">{TRANSFERS_HEADING}</h2>
+        <h2 className="md-section-title">{TRANSFERS_HEADING}</h2>
 
         {!plan.ok ? (
           <p
@@ -205,7 +205,7 @@ export function SettlementTab() {
                 {ALL_PAID_EVENT_CLOSED_MESSAGE}
               </p>
             )}
-            <ul aria-label="Transfers" className="flex flex-col gap-2">
+            <ul aria-label="Transfers" className="md-card divide-y divide-divider">
               {plan.value.map((transfer) => {
                 const label = transferLabel(transfer, participants);
                 const paid = isTransferPaid(transfer, paidTransfers);
@@ -213,23 +213,32 @@ export function SettlementTab() {
                 return (
                   <li
                     key={`${transfer.fromId}-${transfer.toId}-${transfer.amountCents}`}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2"
+                    className="bg-surface"
                   >
-                    <span className="min-w-0 flex-1 truncate text-base">
-                      {nameOf(transfer.fromId)} &rarr; {nameOf(transfer.toId)}
-                    </span>
-                    <span className="shrink-0 text-base font-semibold">
-                      {formatCents(transfer.amountCents)}
-                    </span>
-                    <label className="flex shrink-0 items-center gap-2 text-sm">
+                    <label className="relative block">
                       <input
                         type="checkbox"
+                        className="mobile-input peer absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
                         aria-label={`Paid: ${label}`}
                         checked={paid}
                         disabled={!isEditable}
                         onChange={() => toggleTransferPaid(transfer)}
                       />
-                      Paid
+                      <span className="flex min-h-16 items-center gap-3 px-4 py-3 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-inset peer-focus-visible:outline-primary">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
+                          <FontAwesomeIcon icon={faCoins} className="w-5" />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-base font-medium">
+                          {nameOf(transfer.fromId)} → {nameOf(transfer.toId)}
+                        </span>
+                        <span className="shrink-0 text-base font-semibold">{formatCents(transfer.amountCents)}</span>
+                        <span
+                          aria-hidden="true"
+                          className="flex h-11 w-11 shrink-0 items-center justify-center text-primary"
+                        >
+                          {paid && <FontAwesomeIcon icon={faCheck} className="text-xl" />}
+                        </span>
+                      </span>
                     </label>
                     <span className="sr-only">{label}</span>
                   </li>

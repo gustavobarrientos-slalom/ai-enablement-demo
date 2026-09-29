@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   parseThemePreference,
   resolveEffectiveTheme,
+  THEME_COLORS,
   THEME_STORAGE_KEY,
   type ThemePreference,
 } from './theme';
@@ -43,6 +44,17 @@ export function useTheme() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', effectiveTheme === 'dark');
+    let meta = document.querySelector<HTMLMetaElement>(
+      'meta[name="theme-color"]',
+    );
+
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      document.head.append(meta);
+    }
+
+    meta.content = THEME_COLORS[effectiveTheme];
   }, [effectiveTheme]);
 
   function setThemePreference(nextPreference: ThemePreference) {

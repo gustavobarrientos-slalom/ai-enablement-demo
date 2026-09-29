@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { App } from '../App';
 import { resetAppStore, useAppStore } from '../store/useAppStore';
 import { seedActiveEvent } from '../test/factories';
+import { TabBar } from './TabBar';
 
 function addParticipants(...names: string[]) {
   for (const name of names) {
@@ -18,12 +19,26 @@ beforeEach(() => {
 });
 
 describe('TabBar', () => {
+  it('renders a fixed bottom icon-and-label navigation', () => {
+    render(<TabBar activeTab="group" disabledTabs={[]} onSelect={() => {}} />);
+    const nav = screen.getByRole('tablist');
+    expect(nav).toHaveClass('fixed', 'bottom-0');
+    expect(nav).toHaveClass('bg-surface');
+    for (const name of ['Group', 'Expenses', 'Settlement']) {
+      const tab = screen.getByRole('tab', { name });
+      expect(tab.querySelector('svg')).toBeInTheDocument();
+      expect(tab).toHaveClass('mobile-target');
+    }
+  });
   it('disables Expenses and Settlement with no participants', () => {
     render(<App />);
 
     expect(screen.getByRole('tab', { name: 'Expenses' })).toBeDisabled();
     expect(screen.getByRole('tab', { name: 'Settlement' })).toBeDisabled();
     expect(screen.getByRole('tab', { name: 'Group' })).toBeEnabled();
+    expect(screen.getByRole('tab', { name: 'Group' })).toHaveClass('bg-surface-muted');
+    expect(screen.getByTestId('shell-bottom-dock')).toHaveClass('min-h-[calc(9rem+var(--safe-bottom))]');
+    expect(screen.getByTestId('shell-content').contains(screen.getByRole('button', { name: 'Add participant' }))).toBe(false);
   });
 
   it('disables Expenses and Settlement with a single participant', () => {
@@ -39,6 +54,7 @@ describe('TabBar', () => {
     addParticipants('Ana');
     render(<App />);
 
+    await user.click(screen.getByRole('button', { name: 'Add participant' }));
     await user.type(screen.getByLabelText('Participant name'), 'Luis');
     await user.click(screen.getByRole('button', { name: 'Add participant' }));
 
@@ -52,6 +68,7 @@ describe('TabBar', () => {
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: 'Remove Luis' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm removal' }));
 
     expect(screen.getByRole('tab', { name: 'Expenses' })).toBeDisabled();
   });
@@ -82,9 +99,14 @@ describe('TabBar', () => {
       'aria-selected',
       'true',
     );
+    expect(screen.getByTestId('shell-bottom-dock')).toHaveClass('min-h-[calc(9rem+var(--safe-bottom))]');
+
+    await user.click(screen.getByRole('tab', { name: 'Settlement' }));
+    expect(screen.getByTestId('shell-bottom-dock')).toHaveClass('min-h-[calc(4rem+var(--safe-bottom))]');
 
     await user.click(screen.getByRole('tab', { name: 'Group' }));
     await user.click(screen.getByRole('button', { name: 'Remove Luis' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm removal' }));
 
     expect(screen.getByRole('tab', { name: 'Group' })).toHaveAttribute(
       'aria-selected',

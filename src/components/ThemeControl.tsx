@@ -19,7 +19,7 @@ export function ThemeControl() {
       title={`Theme: ${preference}`}
       data-testid="theme-toggle"
       onClick={() => setThemePreference(nextThemePreference(preference))}
-      className="ml-auto flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-surface-muted hover:text-text"
+      className="mobile-target md-icon-button ml-auto shrink-0"
     >
       <FontAwesomeIcon icon={THEME_ICONS[preference]} />
     </button>

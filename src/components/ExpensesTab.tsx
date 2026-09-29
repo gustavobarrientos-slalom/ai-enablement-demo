@@ -12,7 +12,6 @@ import type { AppError, ExpenseDraft } from '../domain/types';
 import { formatCents } from '../ui/currency';
 import {
   ARCHIVED_READ_ONLY_MESSAGE,
-  CATEGORY_LABELS,
   NO_EXPENSES_MESSAGE,
   tipLabel,
 } from '../ui/messages';
@@ -20,13 +19,15 @@ import {
   CATEGORY_ICONS,
   faBoxArchive,
   faCoins,
-  faPen,
   faReceipt,
   faTrash,
 } from '../ui/icons';
 import { ExpenseForm } from './ExpenseForm';
+import { BottomSheet } from './shell/BottomSheet';
+import { ListRow } from './shell/ListRow';
+import { PrimaryAction } from './shell/PrimaryAction';
 
-export function ExpensesTab() {
+export function ExpensesTab({ showPrimaryAction = true }: { showPrimaryAction?: boolean }) {
   const participants = useAppStore(selectParticipants);
   const expenses = useAppStore(selectExpenses);
   const isEditable = useAppStore(selectIsActiveEventEditable);
@@ -36,13 +37,16 @@ export function ExpensesTab() {
   const removeExpense = useAppStore((state) => state.removeExpense);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   function submit(action: () => boolean): AppError | null {
     return action() ? null : useAppStore.getState().lastError;
   }
 
   function handleAdd(draft: ExpenseDraft): AppError | null {
-    return submit(() => addExpense(draft));
+    const failure = submit(() => addExpense(draft));
+    if (!failure) setAdding(false);
+    return failure;
   }
 
   function handleUpdate(id: string, draft: ExpenseDraft): AppError | null {
@@ -71,20 +75,29 @@ export function ExpensesTab() {
         </p>
       )}
 
-      {isEditable && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-text">New expense</h2>
+      <BottomSheet open={adding} title="New expense" onClose={() => setAdding(false)}>
           <ExpenseForm
             participants={participants}
             submitLabel="Add expense"
             onSubmit={handleAdd}
           />
-        </section>
-      )}
+      </BottomSheet>
+      <BottomSheet open={editingId !== null} title="Edit expense" onClose={() => setEditingId(null)}>
+        {expenses.filter((expense) => expense.id === editingId).map((expense) => (
+          <ExpenseForm
+            key={expense.id}
+            participants={participants}
+            initialDraft={draftFromExpense(expense)}
+            submitLabel="Save changes"
+            onSubmit={(draft) => handleUpdate(expense.id, draft)}
+            onCancel={() => setEditingId(null)}
+          />
+        ))}
+      </BottomSheet>
 
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-text">Expenses ({expenses.length})</h2>
+          <h2 className="md-section-title">Expenses ({expenses.length})</h2>
           <p className="text-base font-semibold text-text">
             Total: <span data-testid="expenses-total">{formatCents(total)}</span>
           </p>
@@ -96,77 +109,44 @@ export function ExpensesTab() {
             {NO_EXPENSES_MESSAGE}
           </p>
         ) : (
-          <ul aria-label="Expenses" className="flex flex-col gap-2">
+          <ul aria-label="Expenses" className="md-card divide-y divide-divider">
             {expenses.map((expense) => (
-              <li
+              <ListRow
                 key={expense.id}
-                className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-3 py-2"
-              >
-                {isEditable && editingId === expense.id ? (
-                  <ExpenseForm
-                    participants={participants}
-                    initialDraft={draftFromExpense(expense)}
-                    submitLabel="Save changes"
-                    onSubmit={(draft) => handleUpdate(expense.id, draft)}
-                    onCancel={() => setEditingId(null)}
-                  />
-                ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <FontAwesomeIcon
-                      icon={CATEGORY_ICONS[expense.category]}
-                      data-testid={`category-${expense.id}`}
-                      title={CATEGORY_LABELS[expense.category]}
-                      className="w-5 shrink-0 text-text-muted"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-base">{expense.concept}</p>
-                      <p className="truncate text-xs text-text-muted">
-                        Paid by {participantName(expense.payerId)} &middot;{' '}
-                        {expense.shares.length}{' '}
-                        {expense.shares.length === 1 ? 'beneficiary' : 'beneficiaries'}
-                      </p>
-                      {expense.tip && expense.tip.amountCents > 0 && (
-                        <p
-                          className="truncate text-xs text-text-muted"
-                          data-testid={`tip-${expense.id}`}
-                        >
-                          <FontAwesomeIcon icon={faCoins} className="mr-1" />
-                          {tipLabel(expense.tip.amountCents)}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <span className="text-base font-semibold">
-                        {formatCents(expenseTotalCents(expense))}
-                      </span>
-                      {isEditable && (
-                      <>
-                      <button
-                        type="button"
-                        aria-label={`Edit ${expense.concept}`}
-                        onClick={() => setEditingId(expense.id)}
-                        className="min-h-11 min-w-11 rounded-lg px-3 text-text-muted hover:bg-surface-muted"
-                      >
-                        <FontAwesomeIcon icon={faPen} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Delete ${expense.concept}`}
-                        onClick={() => removeExpense(expense.id)}
-                        className="min-h-11 min-w-11 rounded-lg px-3 text-text-muted hover:bg-surface-muted hover:text-danger-fg"
-                      >
-                        <FontAwesomeIcon icon={faTrash} />
-                      </button>
-                      </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </li>
+                testId={`category-${expense.id}`}
+                icon={CATEGORY_ICONS[expense.category]}
+                primary={expense.concept}
+                secondary={<>
+                  <span>Paid by {participantName(expense.payerId)} &middot;{' '}
+                    {expense.shares.length}{' '}
+                    {expense.shares.length === 1 ? 'beneficiary' : 'beneficiaries'}
+                  </span>
+                  {expense.tip && expense.tip.amountCents > 0 && (
+                    <span className="block" data-testid={`tip-${expense.id}`}>
+                      <FontAwesomeIcon icon={faCoins} className="mr-1" />
+                      {tipLabel(expense.tip.amountCents)}
+                    </span>
+                  )}
+                </>}
+                amount={formatCents(expenseTotalCents(expense))}
+                {...(isEditable ? { onSelect: () => setEditingId(expense.id) } : {})}
+                {...(isEditable ? {
+                  actions: [{
+                    label: `Delete ${expense.concept}`,
+                    text: 'Delete',
+                    icon: faTrash,
+                    destructive: true,
+                    onClick: () => removeExpense(expense.id),
+                  }],
+                } : {})}
+              />
             ))}
           </ul>
         )}
       </section>
+      {isEditable && showPrimaryAction && !adding && editingId === null && (
+        <PrimaryAction onClick={() => setAdding(true)}>Add expense</PrimaryAction>
+      )}
     </div>
   );
 }

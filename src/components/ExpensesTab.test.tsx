@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ExpensesTab } from './ExpensesTab';
 import { seedActiveEvent } from '../test/factories';
@@ -20,7 +20,14 @@ function seedGroup(): void {
   state().addParticipant('Carla');
 }
 
+async function openExpenseForm(user: ReturnType<typeof userEvent.setup>) {
+  if (!screen.queryByRole('dialog', { name: 'New expense' })) {
+    await user.click(screen.getByRole('button', { name: 'Add expense' }));
+  }
+}
+
 async function fillBasics(user: ReturnType<typeof userEvent.setup>, concept: string, amount: string) {
+  await openExpenseForm(user);
   await user.type(screen.getByLabelText('Concept'), concept);
   await user.type(screen.getByLabelText('Amount'), amount);
 }
@@ -67,6 +74,7 @@ describe('adding an expense', () => {
     seedGroup();
     render(<ExpensesTab />);
 
+    await openExpenseForm(user);
     await user.type(screen.getByLabelText('Amount'), '50.00');
     await user.click(screen.getByLabelText('Ana'));
     await user.click(screen.getByRole('button', { name: 'Add expense' }));
@@ -86,6 +94,64 @@ describe('adding an expense', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Select at least one beneficiary');
   });
 
+  it('validates on blur and clears the field error as the value is corrected', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+    await openExpenseForm(user);
+    const amount = screen.getByLabelText('Amount');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(amount);
+    await user.tab();
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    const message = document.getElementById(amount.getAttribute('aria-describedby')!);
+    expect(message).toHaveTextContent('Enter a valid amount');
+    expect(amount.parentElement?.nextElementSibling).toBe(message);
+    expect(screen.getByLabelText('Concept')).not.toHaveAttribute('aria-invalid');
+
+    await user.type(amount, '50.00');
+    expect(amount).not.toHaveAttribute('aria-invalid');
+    expect(amount).not.toHaveAttribute('aria-describedby');
+    expect(message).not.toBeInTheDocument();
+  });
+
+  it('shows all invalid fields beneath their controls on submit', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+    await openExpenseForm(user);
+    await user.click(screen.getByRole('radio', { name: 'Percentage' }));
+    await user.type(screen.getByLabelText('Tip percentage'), '101');
+    await user.click(screen.getByRole('button', { name: 'Add expense' }));
+
+    for (const [label, text] of [
+      ['Concept', 'The concept is required'],
+      ['Amount', 'Enter a valid amount'],
+      ['Tip percentage', 'The tip percentage must be between 0 and 100'],
+    ] as const) {
+      const field = screen.getByLabelText(label);
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      const message = document.getElementById(field.getAttribute('aria-describedby')!);
+      expect(message).toHaveTextContent(text);
+      expect(field.parentElement?.nextElementSibling).toBe(message);
+    }
+    const split = screen.getByText('Split between').closest('fieldset')!;
+    expect(split).toHaveTextContent('Select at least one beneficiary');
+    expect(split).toHaveAttribute('aria-describedby');
+    expect(screen.getAllByRole('alert')).toHaveLength(4);
+    expect(selectExpenses(state())).toEqual([]);
+
+    await user.type(screen.getByLabelText('Concept'), 'Taxi');
+    await user.type(screen.getByLabelText('Amount'), '50');
+    await user.clear(screen.getByLabelText('Tip percentage'));
+    await user.type(screen.getByLabelText('Tip percentage'), '10');
+    await user.click(screen.getByLabelText('Ana'));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add expense' }));
+    expect(selectExpenses(state())).toHaveLength(1);
+  });
+
   it('clears the form after a successful add', async () => {
     const user = userEvent.setup();
     seedGroup();
@@ -95,12 +161,44 @@ describe('adding an expense', () => {
     await user.click(screen.getByLabelText('Ana'));
     await user.click(screen.getByRole('button', { name: 'Add expense' }));
 
+    expect(screen.queryByRole('dialog', { name: 'New expense' })).not.toBeInTheDocument();
+    await openExpenseForm(user);
     expect(screen.getByLabelText('Concept')).toHaveValue('');
     expect(screen.getByLabelText('Amount')).toHaveValue('');
   });
 });
 
 describe('custom split', () => {
+  it('places individual share errors below their inputs and the total error below the split', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+    await fillBasics(user, 'Dinner', '100.00');
+    await user.click(screen.getByLabelText('Ana'));
+    await user.click(screen.getByLabelText('Luis'));
+    await user.click(screen.getByRole('radio', { name: 'Custom' }));
+
+    const ana = screen.getByLabelText('Amount for Ana');
+    await user.type(ana, '-2');
+    await user.tab();
+    expect(ana).toHaveAttribute('aria-invalid', 'true');
+    const shareError = document.getElementById(ana.getAttribute('aria-describedby')!);
+    expect(shareError).toHaveTextContent('Shares cannot be negative');
+    expect(ana.nextElementSibling).toBe(shareError);
+
+    await user.clear(ana);
+    await user.type(ana, '60');
+    await user.tab();
+    expect(ana).not.toHaveAttribute('aria-invalid');
+    const split = screen.getByText('Split between').closest('fieldset')!;
+    expect(split).toHaveTextContent('The shares must add up to the total');
+    expect(screen.getByRole('button', { name: 'Add expense' })).toBeDisabled();
+
+    await user.type(screen.getByLabelText('Amount for Luis'), '40');
+    expect(split).not.toHaveTextContent('The shares must add up to the total');
+    expect(screen.getByRole('button', { name: 'Add expense' })).toBeEnabled();
+  });
+
   it('reports remaining cents and blocks saving until balanced', async () => {
     const user = userEvent.setup();
     seedGroup();
@@ -157,12 +255,9 @@ describe('editing and deleting', () => {
     render(<ExpensesTab />);
 
     await addDinner(user);
-    await user.click(screen.getByRole('button', { name: 'Edit Dinner' }));
+    await user.click(screen.getByRole('button', { name: /Dinner Paid by/ }));
 
-    // Two forms are mounted (create + edit), so scope to the expense row.
-    const row = within(
-      within(screen.getByRole('list', { name: 'Expenses' })).getAllByRole('listitem')[0]!,
-    );
+    const row = within(screen.getByRole('dialog', { name: 'Edit expense' }));
     const concept = row.getByLabelText('Concept');
     await user.clear(concept);
     await user.type(concept, 'Brunch');
@@ -173,17 +268,34 @@ describe('editing and deleting', () => {
     expect(screen.getByText('Brunch')).toBeInTheDocument();
   });
 
+  it('validates an edited expense on blur without changing the saved expense', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+    await addDinner(user);
+    await user.click(screen.getByRole('button', { name: /Dinner Paid by/ }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Edit expense' }));
+    const amount = dialog.getByLabelText('Amount');
+    await user.clear(amount);
+    await user.tab();
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    expect(selectExpenses(state())[0]!.amountCents).toBe(10000);
+    await user.type(amount, '80');
+    await user.click(dialog.getByRole('button', { name: 'Save changes' }));
+    expect(selectExpenses(state())[0]!.amountCents).toBe(8000);
+  });
+
   it('cancels editing without changing the expense', async () => {
     const user = userEvent.setup();
     seedGroup();
     render(<ExpensesTab />);
 
     await addDinner(user);
-    await user.click(screen.getByRole('button', { name: 'Edit Dinner' }));
+    await user.click(screen.getByRole('button', { name: /Dinner Paid by/ }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(selectExpenses(state())[0]!.concept).toBe('Dinner');
-    expect(screen.getByRole('button', { name: 'Edit Dinner' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Dinner Paid by/ })).toBeInTheDocument();
   });
 
   it('deletes an expense and updates the total', async () => {
@@ -194,6 +306,8 @@ describe('editing and deleting', () => {
     await addDinner(user);
     expect(screen.getByTestId('expenses-total')).toHaveTextContent('$100.00');
 
+    screen.getByRole('button', { name: /Dinner Paid by/ }).focus();
+    await user.keyboard('{ArrowLeft}');
     await user.click(screen.getByRole('button', { name: 'Delete Dinner' }));
 
     expect(selectExpenses(state())).toEqual([]);
@@ -210,6 +324,56 @@ describe('editing and deleting', () => {
 
     expect(screen.getByText(/Paid by Ana/)).toBeInTheDocument();
     expect(screen.getByText(/2 beneficiaries/)).toBeInTheDocument();
+  });
+
+  it('reveals the destructive action during a left swipe and closes it on a right swipe', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+    await addDinner(user);
+    const row = screen.getByTestId(`category-${selectExpenses(state())[0]!.id}`);
+    const surface = row.firstElementChild!;
+
+    expect(screen.queryByRole('button', { name: 'Delete Dinner' })).toBeNull();
+    expect(within(row).queryByRole('button', { name: 'Show actions for Dinner' })).toBeNull();
+    expect(within(row).queryByRole('button', { name: 'Edit Dinner' })).toBeNull();
+    fireEvent.click(within(row).getByRole('button', { name: /Dinner Paid by/ }));
+    expect(screen.getByRole('dialog', { name: 'Edit expense' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.touchStart(surface, { touches: [{ clientX: 180, clientY: 40 }] });
+    fireEvent.touchMove(surface, { touches: [{ clientX: 145, clientY: 42 }] });
+    expect(surface).toHaveStyle({ transform: 'translateX(-35px)' });
+    fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 100, clientY: 43 }] });
+    expect(surface).toHaveStyle({ transform: 'translateX(-80px)' });
+    const deleteButton = screen.getByRole('button', { name: 'Delete Dinner' });
+    expect(deleteButton).toHaveClass('bg-red-700', 'text-white', 'mobile-target');
+    expect(deleteButton).toHaveTextContent('Delete');
+    expect(deleteButton.querySelector('svg')).toHaveAttribute('data-icon', 'trash');
+    await user.click(within(row).getByRole('button', { name: /Dinner Paid by/ }));
+    expect(screen.queryByRole('dialog', { name: 'Edit expense' })).toBeNull();
+    expect(surface).toHaveStyle({ transform: 'translateX(0px)' });
+
+    fireEvent.touchStart(surface, { touches: [{ clientX: 180, clientY: 40 }] });
+    fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 100, clientY: 43 }] });
+    expect(surface).toHaveStyle({ transform: 'translateX(-80px)' });
+
+    fireEvent.touchStart(surface, { touches: [{ clientX: 100, clientY: 40 }] });
+    fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 180, clientY: 43 }] });
+    expect(surface).toHaveStyle({ transform: 'translateX(0px)' });
+    expect(screen.queryByRole('button', { name: 'Delete Dinner' })).toBeNull();
+
+    fireEvent.touchStart(surface, { touches: [{ clientX: 180, clientY: 40 }] });
+    fireEvent.touchEnd(surface, { changedTouches: [{ clientX: 175, clientY: 120 }] });
+    expect(screen.queryByRole('button', { name: 'Delete Dinner' })).toBeNull();
+    const editRow = within(row).getByRole('button', { name: /Dinner Paid by/ });
+    editRow.focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('button', { name: 'Delete Dinner' })).toBeInTheDocument();
+    await user.tab();
+    expect(deleteButton).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('button', { name: 'Delete Dinner' })).toBeNull();
+    expect(editRow).toHaveFocus();
   });
 });
 
@@ -340,5 +504,18 @@ describe('tips', () => {
 
     expect(screen.queryByLabelText('Tip percentage')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Tip amount')).not.toBeInTheDocument();
+  });
+
+  it('opens an accessible sheet and dismisses it without adding an expense', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+
+    await openExpenseForm(user);
+    expect(screen.getByRole('dialog', { name: 'New expense' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Add expense' })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Close New expense' }));
+    expect(screen.queryByRole('dialog', { name: 'New expense' })).not.toBeInTheDocument();
+    expect(selectExpenses(state())).toEqual([]);
   });
 });

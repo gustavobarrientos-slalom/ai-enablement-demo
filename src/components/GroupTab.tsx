@@ -21,8 +21,12 @@ import {
   canRemoveParticipant,
 } from '../domain/group';
 import type { AppError } from '../domain/types';
+import { BottomSheet } from './shell/BottomSheet';
+import { ListRow } from './shell/ListRow';
+import { PrimaryAction } from './shell/PrimaryAction';
+import { faUsers } from '../ui/icons';
 
-export function GroupTab() {
+export function GroupTab({ showPrimaryAction = true }: { showPrimaryAction?: boolean }) {
   const eventName = useAppStore(selectEventName) ?? '';
   const participants = useAppStore(selectParticipants);
   const setEventName = useAppStore((state) => state.setEventName);
@@ -36,6 +40,8 @@ export function GroupTab() {
   const [eventNameError, setEventNameError] = useState<AppError | null>(null);
   const [participantDraft, setParticipantDraft] = useState('');
   const [participantError, setParticipantError] = useState<AppError | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   useEffect(() => {
     setEventNameDraft(eventName);
@@ -57,6 +63,7 @@ export function GroupTab() {
     if (addParticipant(participantDraft)) {
       setParticipantDraft('');
       setParticipantError(null);
+      setAdding(false);
       return;
     }
 
@@ -76,26 +83,27 @@ export function GroupTab() {
       )}
 
       <section className="flex flex-col gap-2">
-        <label htmlFor="event-name" className="text-sm font-semibold text-text">
-          Event name
-        </label>
-        <input
-          id="event-name"
-          type="text"
-          value={eventNameDraft}
-          disabled={!isEditable}
-          maxLength={EVENT_NAME_MAX_LENGTH + 1}
-          aria-invalid={eventNameError !== null}
-          aria-describedby={eventNameError ? 'event-name-error' : undefined}
-          onChange={(event) => setEventNameDraft(event.target.value)}
-          onBlur={commitEventName}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.currentTarget.blur();
-            }
-          }}
-          className="min-h-11 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
-        />
+        <div className="md-field-wrap">
+          <input
+            id="event-name"
+            type="text"
+            value={eventNameDraft}
+            placeholder=" "
+            disabled={!isEditable}
+            maxLength={EVENT_NAME_MAX_LENGTH + 1}
+            aria-invalid={eventNameError !== null}
+            aria-describedby={eventNameError ? 'event-name-error' : undefined}
+            onChange={(event) => setEventNameDraft(event.target.value)}
+            onBlur={commitEventName}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+            }}
+            className="mobile-input md-field"
+          />
+          <label htmlFor="event-name" className="md-field-label">Event name</label>
+        </div>
         {eventNameError && (
           <p id="event-name-error" role="alert" className="text-sm text-danger-fg">
             {ERROR_MESSAGES[eventNameError]}
@@ -104,81 +112,65 @@ export function GroupTab() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-text">
+        <h2 className="md-section-title">
           Participants ({participants.length})
         </h2>
 
-        {isEditable && (
-        <form onSubmit={handleAddParticipant} className="flex gap-2" noValidate>
-          <label htmlFor="participant-name" className="sr-only">
-            Participant name
-          </label>
-          <input
-            id="participant-name"
-            type="text"
-            value={participantDraft}
-            placeholder="Name"
-            maxLength={PARTICIPANT_NAME_MAX_LENGTH + 1}
-            aria-invalid={participantError !== null}
-            aria-describedby={participantError ? 'participant-error' : undefined}
-            onChange={(event) => setParticipantDraft(event.target.value)}
-            className="min-h-11 flex-1 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
-          />
+        <BottomSheet open={adding} title="New participant" onClose={() => setAdding(false)}>
+        <form onSubmit={handleAddParticipant} className="flex flex-col gap-3" noValidate>
+          <div className="md-field-wrap">
+            <input
+              id="participant-name"
+              type="text"
+              value={participantDraft}
+              placeholder=" "
+              maxLength={PARTICIPANT_NAME_MAX_LENGTH + 1}
+              aria-invalid={participantError !== null}
+              aria-describedby={participantError ? 'participant-error' : undefined}
+              onChange={(event) => setParticipantDraft(event.target.value)}
+              className="mobile-input md-field"
+            />
+            <label htmlFor="participant-name" className="md-field-label">Participant name</label>
+          </div>
+          {participantError && (
+            <p id="participant-error" role="alert" className="text-sm text-danger-fg">
+              {ERROR_MESSAGES[participantError]}
+            </p>
+          )}
           <button
             type="submit"
             aria-label="Add participant"
-            className="min-h-11 min-w-11 rounded-lg bg-primary px-3 text-primary-contrast"
+            className="mobile-target md-filled-button"
           >
             <FontAwesomeIcon icon={faUserPlus} />
+            <span className="ml-2">Add participant</span>
           </button>
         </form>
-        )}
-
-        {participantError && (
-          <p id="participant-error" role="alert" className="text-sm text-danger-fg">
-            {ERROR_MESSAGES[participantError]}
-          </p>
-        )}
+        </BottomSheet>
 
         {participants.length === 0 ? (
           <p className="text-sm text-text-muted">No participants yet.</p>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul aria-label="Participants" className="md-card divide-y divide-divider">
             {participants.map((participant) => {
               const removable = isEditable && canRemoveParticipant(participant.id, expenses);
 
               return (
-                <li
+                <ListRow
                   key={participant.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-base">{participant.name}</p>
-                    {isEditable && !removable && (
-                      <p className="text-xs text-text-muted">
-                        {PARTICIPANT_HAS_EXPENSES_MESSAGE}
-                      </p>
-                    )}
-                  </div>
-                  {isEditable && (
-                  <button
-                    type="button"
-                    disabled={!removable}
-                    aria-disabled={!removable}
-                    aria-label={`Remove ${participant.name}`}
-                    title={removable ? undefined : PARTICIPANT_HAS_EXPENSES_MESSAGE}
-                    onClick={() => removeParticipant(participant.id)}
-                    className={[
-                      'min-h-11 min-w-11 shrink-0 rounded-lg px-3 text-text-muted',
-                      removable
-                        ? 'hover:bg-surface-muted hover:text-danger-fg'
-                        : 'cursor-not-allowed opacity-40',
-                    ].join(' ')}
-                  >
-                    <FontAwesomeIcon icon={faTrash} />
-                  </button>
-                  )}
-                </li>
+                  icon={faUsers}
+                  primary={participant.name}
+                  {...(isEditable && !removable ? { secondary: PARTICIPANT_HAS_EXPENSES_MESSAGE } : {})}
+                  {...(removable ? {
+                    actions: [{
+                      label: `Remove ${participant.name}`,
+                      text: 'Delete',
+                      icon: faTrash,
+                      destructive: true,
+                      onClick: () => setRemovingId(participant.id),
+                    }],
+                  } : {})}
+                />
               );
             })}
           </ul>
@@ -191,6 +183,25 @@ export function GroupTab() {
           </p>
         )}
       </section>
+      {isEditable && showPrimaryAction && !adding && !removingId && (
+        <PrimaryAction onClick={() => { setParticipantError(null); setAdding(true); }}>
+          Add participant
+        </PrimaryAction>
+      )}
+      <BottomSheet
+        open={removingId !== null}
+        title="Remove participant"
+        onClose={() => setRemovingId(null)}
+      >
+        <p className="mb-4">Remove {participants.find((participant) => participant.id === removingId)?.name}?</p>
+        <div className="flex gap-2">
+          <button type="button" className="mobile-target md-outline-button flex-1" onClick={() => setRemovingId(null)}>Cancel</button>
+          <button type="button" className="mobile-target md-tonal-button flex-1 bg-danger-bg text-danger-fg" onClick={() => {
+            if (removingId) removeParticipant(removingId);
+            setRemovingId(null);
+          }}>Confirm removal</button>
+        </div>
+      </BottomSheet>
     </div>
   );
 }

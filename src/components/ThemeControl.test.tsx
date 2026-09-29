@@ -42,6 +42,7 @@ describe('ThemeControl', () => {
     const button = screen.getByRole('button', {
       name: 'Change theme (currently system)',
     });
+    expect(button).toHaveClass('mobile-target');
     expect(button.querySelector('svg')).toHaveAttribute('data-icon', 'circle-half-stroke');
 
     fireEvent.click(button);

@@ -26,6 +26,7 @@ async function addExpense(
   amount: string,
   category?: Category,
 ): Promise<void> {
+  await openForm(user);
   await user.type(screen.getByLabelText('Concept'), concept);
   await user.type(screen.getByLabelText('Amount'), amount);
 
@@ -38,6 +39,12 @@ async function addExpense(
   }
 
   await user.click(screen.getByRole('button', { name: 'Add expense' }));
+}
+
+async function openForm(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  if (!screen.queryByRole('dialog', { name: 'New expense' })) {
+    await user.click(screen.getByRole('button', { name: 'Add expense' }));
+  }
 }
 
 /** Font Awesome renders the icon name into `data-icon` on the svg it emits. */
@@ -72,9 +79,10 @@ beforeEach(() => {
 });
 
 describe('category selector', () => {
-  it('offers exactly the six categories with their labels', () => {
+  it('offers exactly the six categories with their labels', async () => {
     seedGroup();
     render(<ExpensesTab />);
+    await openForm(userEvent.setup());
 
     const options = within(screen.getByLabelText('Category')).getAllByRole('option');
 
@@ -83,9 +91,10 @@ describe('category selector', () => {
     );
   });
 
-  it('defaults to Other', () => {
+  it('defaults to Other', async () => {
     seedGroup();
     render(<ExpensesTab />);
+    await openForm(userEvent.setup());
 
     expect(screen.getByLabelText('Category')).toHaveValue('other');
   });
@@ -94,6 +103,7 @@ describe('category selector', () => {
     const user = userEvent.setup();
     seedGroup();
     render(<ExpensesTab />);
+    await openForm(user);
 
     for (const category of CATEGORIES) {
       await user.selectOptions(screen.getByLabelText('Category'), category);
@@ -138,7 +148,7 @@ describe('saving a category', () => {
     const original = selectExpenses(state())[0]!;
     expect(iconNameIn(screen.getByTestId(`category-${original.id}`))).toBe('utensils');
 
-    await user.click(screen.getByRole('button', { name: 'Edit Dinner' }));
+    await user.click(screen.getByRole('button', { name: /Dinner Paid by/ }));
 
     const editForm = screen.getByRole('button', { name: 'Save changes' }).closest('form')!;
     await user.selectOptions(within(editForm).getByLabelText('Category'), 'drinks');
@@ -157,7 +167,7 @@ describe('saving a category', () => {
     render(<ExpensesTab />);
 
     await addExpense(user, 'Hotel', '100.00', 'lodging');
-    await user.click(screen.getByRole('button', { name: 'Edit Hotel' }));
+    await user.click(screen.getByRole('button', { name: /Hotel Paid by/ }));
 
     const editForm = screen.getByRole('button', { name: 'Save changes' }).closest('form')!;
     expect(within(editForm).getByLabelText('Category')).toHaveValue('lodging');
@@ -169,6 +179,7 @@ describe('category icons in the list', () => {
     const user = userEvent.setup();
     seedGroup();
     render(<ExpensesTab />);
+    await openForm(user);
 
     await user.type(screen.getByLabelText('Concept'), 'Dinner');
     await user.type(screen.getByLabelText('Amount'), '250.00');

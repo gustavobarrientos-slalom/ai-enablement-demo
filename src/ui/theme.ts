@@ -1,6 +1,10 @@
+import { THEME_COLORS } from '../../pwa-theme-colors.mjs';
+
 export const THEME_STORAGE_KEY = 'split:theme';
 
 export const THEME_PREFERENCES = ['system', 'light', 'dark'] as const;
+
+export { THEME_COLORS };
 
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
 export type EffectiveTheme = Exclude<ThemePreference, 'system'>;

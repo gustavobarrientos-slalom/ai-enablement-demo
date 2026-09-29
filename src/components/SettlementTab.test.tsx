@@ -95,6 +95,7 @@ describe('PDF export controls', () => {
 
     expect(screen.getByRole('button', { name: 'Export PDF' })).toBeEnabled();
   });
+
 });
 
 describe('balance table', () => {
@@ -179,6 +180,9 @@ describe('golden scenario rendering', () => {
       'Beto -> Carla $143.34',
       'Luis -> Carla $53.33',
     ]);
+    const rows = within(screen.getByRole('list', { name: 'Transfers' })).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('$420.00');
+    expect(rows[0]?.querySelector('[aria-label="Open"]')).not.toBeInTheDocument();
   });
 
   it('stays within the N-1 bound', () => {
@@ -253,6 +257,35 @@ describe('transfer payment checklist', () => {
     return [ana!, luis!];
   }
 
+  it('uses one full-row checkbox with a trailing checked indicator', async () => {
+    const user = userEvent.setup();
+    seedOneTransfer();
+    render(<SettlementTab />);
+
+    const row = within(screen.getByRole('list', { name: 'Transfers' })).getByRole('listitem');
+    const checkbox = within(row).getByRole('checkbox', { name: 'Paid: Luis -> Ana $50.00' });
+    const label = row.querySelector('label')!;
+    const visualRow = checkbox.nextElementSibling!;
+    const indicator = visualRow.lastElementChild!;
+
+    expect(label).toHaveClass('relative', 'block');
+    expect(checkbox).toHaveClass('mobile-input', 'absolute', 'inset-0', 'h-full', 'w-full');
+    expect(visualRow).toHaveClass('flex', 'items-center', 'peer-focus-visible:outline');
+    expect(indicator).toHaveClass('h-11', 'w-11', 'text-primary');
+    expect(indicator).not.toHaveClass('rounded-full', 'border-2', 'bg-primary');
+    expect(indicator.querySelector('svg')).toBeNull();
+    expect(within(row).getByText('$50.00')).toBeInTheDocument();
+
+    await user.click(label);
+    expect(checkbox).toBeChecked();
+    expect(indicator).not.toHaveClass('rounded-full', 'border-2', 'bg-primary');
+    expect(indicator.querySelector('svg')).toHaveAttribute('data-icon', 'check');
+    await user.keyboard(' ');
+    expect(checkbox).not.toBeChecked();
+    expect(indicator).not.toHaveClass('rounded-full', 'border-2', 'bg-primary');
+    expect(indicator.querySelector('svg')).toBeNull();
+  });
+
   it('checks and unchecks a transfer and shows full progress without changing settlement', async () => {
     const user = userEvent.setup();
     const [ana, luis] = seedOneTransfer();
@@ -319,6 +352,8 @@ describe('transfer payment checklist', () => {
     });
     expect(checkbox).toBeChecked();
     expect(checkbox).toBeDisabled();
+    expect(checkbox.nextElementSibling?.lastElementChild?.querySelector('svg'))
+      .toHaveAttribute('data-icon', 'check');
     expect(screen.getByText('1 of 1 paid')).toBeInTheDocument();
     expect(screen.getByText('All paid — event closed')).toBeInTheDocument();
     await user.click(checkbox);

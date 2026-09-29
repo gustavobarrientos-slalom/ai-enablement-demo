@@ -7,25 +7,55 @@ import { ExpensesTab } from './components/ExpensesTab';
 import { SettlementTab } from './components/SettlementTab';
 import { TabBar, type TabId } from './components/TabBar';
 import { ThemeControl } from './components/ThemeControl';
-import { selectActiveEvent, selectIsGroupValid, useAppStore } from './store/useAppStore';
+import { AppShell } from './components/shell/AppShell';
+import { AppBar } from './components/shell/AppBar';
+import { usePrefersReducedMotion } from './ui/usePrefersReducedMotion';
+import { selectActiveEvent, selectIsActiveEventEditable, selectIsGroupValid, useAppStore } from './store/useAppStore';
 import { copyText } from './lib/clipboard';
 import { buildShareUrl, readSharePayload } from './lib/shareUrl';
 import {
-  BACK_TO_EVENTS_LABEL,
   EVENT_IMPORTED,
   EVENT_STATUS_LABELS,
   INVALID_SHARE_LINK,
   LINK_COPIED,
 } from './ui/messages';
-import { faArrowLeft, faShareFromSquare, faUsers } from './ui/icons';
+import { faShareFromSquare } from './ui/icons';
 
 export function App() {
   const activeEvent = useAppStore(selectActiveEvent);
   const isGroupValid = useAppStore(selectIsGroupValid);
+  const isEditable = useAppStore(selectIsActiveEventEditable);
   const closeEvent = useAppStore((state) => state.closeEvent);
   const importEvent = useAppStore((state) => state.importEvent);
   const [message, setMessage] = useState<string | null>(null);
   const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [exiting, setExiting] = useState<{ id: string; name: string; status: string } | null>(null);
+  const reducedMotion = usePrefersReducedMotion();
+  const [activeTab, setActiveTab] = useState<TabId>('group');
+  const disabledTabs: TabId[] = isGroupValid ? [] : ['expenses', 'settlement'];
+
+  useEffect(() => {
+    setActiveTab('group');
+  }, [activeEvent?.id]);
+
+  useEffect(() => {
+    if (disabledTabs.includes(activeTab)) setActiveTab('group');
+  }, [activeTab, isGroupValid]);
+
+  function handleBack(): void {
+    if (activeEvent && !reducedMotion) {
+      setExiting({ id: activeEvent.id, name: activeEvent.name, status: EVENT_STATUS_LABELS[activeEvent.status] });
+      return;
+    }
+    closeEvent();
+  }
+
+  useEffect(() => {
+    if (reducedMotion && exiting) {
+      closeEvent();
+      setExiting(null);
+    }
+  }, [reducedMotion, exiting, closeEvent]);
 
   function showMessage(nextMessage: string): void {
     if (messageTimer.current !== null) {
@@ -85,83 +115,71 @@ export function App() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 px-3 py-4 sm:px-4">
-      <header className="flex items-center gap-2">
-        {activeEvent && (
+    <AppShell
+      appBar={<AppBar
+        title={activeEvent?.name ?? exiting?.name ?? 'Split'}
+        subtitle={activeEvent ? EVENT_STATUS_LABELS[activeEvent.status] : exiting?.status ?? 'Your events'}
+        onBack={activeEvent && !exiting ? handleBack : undefined}
+        actions={<>
+        {activeEvent && !exiting && (
           <button
             type="button"
-            aria-label={BACK_TO_EVENTS_LABEL}
-            onClick={closeEvent}
-            className="min-h-11 min-w-11 shrink-0 rounded-lg px-3 text-text-muted hover:bg-surface-muted"
-          >
-            <FontAwesomeIcon icon={faArrowLeft} />
-          </button>
-        )}
-        <FontAwesomeIcon icon={faUsers} className="text-lg text-text-muted" />
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold leading-tight">Split</h1>
-          <p className="truncate text-sm text-text-muted">
-            {activeEvent
-              ? `${activeEvent.name} \u00b7 ${EVENT_STATUS_LABELS[activeEvent.status]}`
-              : 'Your events'}
-          </p>
-        </div>
-        {activeEvent && (
-          <button
-            type="button"
+            aria-label="Share"
+            title="Share"
             onClick={shareActiveEvent}
-            className="flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-text-muted hover:bg-surface-muted"
+            className="mobile-target md-icon-button shrink-0"
           >
             <FontAwesomeIcon icon={faShareFromSquare} />
-            Share
           </button>
         )}
         <ThemeControl />
-      </header>
-
-      {message && (
+        </>}
+      />}
+      content={<>
+        {message && (
         <p role="status" className="rounded-lg bg-success-bg px-3 py-2 text-sm text-success-fg">
           {message}
         </p>
       )}
-
-      {activeEvent ? (
-        // Keyed by event id so per-tab drafts never leak between events.
-        <EventWorkspace key={activeEvent.id} isGroupValid={isGroupValid} />
+      {exiting ? (
+        <div className="pointer-events-none animate-pop-out" onAnimationEnd={(event) => {
+          if (event.target !== event.currentTarget) return;
+          closeEvent();
+          setExiting(null);
+        }} data-testid="exiting-screen">
+          <EventWorkspace activeTab={activeTab} showPrimaryAction={false} />
+        </div>
+      ) : activeEvent ? (
+        <div key={activeEvent.id} className={reducedMotion ? '' : 'animate-push-in'}>
+          <EventWorkspace activeTab={activeTab} />
+        </div>
       ) : (
-        <main className="flex-1">
-          <EventsHome />
-        </main>
+        <EventsHome />
       )}
-    </div>
+      </>}
+      bottomBar={activeEvent || exiting
+        ? <TabBar activeTab={activeTab} disabledTabs={disabledTabs} onSelect={setActiveTab} />
+        : undefined}
+      hasPrimaryAction={!activeEvent || Boolean(isEditable && activeTab !== 'settlement' && !exiting)}
+    />
   );
 }
 
-function EventWorkspace({ isGroupValid }: { isGroupValid: boolean }) {
-  const [activeTab, setActiveTab] = useState<TabId>('group');
-
-  const disabledTabs: TabId[] = isGroupValid ? [] : ['expenses', 'settlement'];
-
-  // Never leave a tab active once it becomes disabled.
-  useEffect(() => {
-    if (disabledTabs.includes(activeTab)) {
-      setActiveTab('group');
-    }
-  }, [activeTab, isGroupValid]);
-
+function EventWorkspace({ activeTab, showPrimaryAction = true }: {
+  activeTab: TabId;
+  showPrimaryAction?: boolean;
+}) {
   return (
     <>
-      <TabBar activeTab={activeTab} disabledTabs={disabledTabs} onSelect={setActiveTab} />
-
       <main className="flex-1">
         {activeTab === 'group' && (
           <section role="tabpanel" id="panel-group" aria-labelledby="tab-group">
-            <GroupTab />
+            <GroupTab showPrimaryAction={showPrimaryAction} />
           </section>
         )}
         {activeTab === 'expenses' && (
           <section role="tabpanel" id="panel-expenses" aria-labelledby="tab-expenses">
-            <ExpensesTab />
+            <ExpensesTab showPrimaryAction={showPrimaryAction} />
           </section>
         )}
         {activeTab === 'settlement' && (

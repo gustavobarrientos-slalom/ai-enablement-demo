@@ -6,6 +6,8 @@ import {
   faBoxOpen,
   faCalendarDay,
   faCar,
+  faCheck,
+  faChevronRight,
   faCircleCheck,
   faCircleInfo,
   faCircleHalfStroke,
@@ -24,6 +26,7 @@ import {
   faUserPlus,
   faUsers,
   faUtensils,
+  faXmark,
 } from '@fortawesome/free-solid-svg-icons';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import type { Category } from '../domain/types';
@@ -44,6 +47,7 @@ library.add(
   faBoxArchive,
   faBoxOpen,
   faCalendarDay,
+  faCheck,
   faPlus,
   faShareFromSquare,
   faUtensils,
@@ -53,6 +57,8 @@ library.add(
   faBed,
   faTicket,
   faTag,
+  faChevronRight,
+  faXmark,
 );
 
 /**
@@ -75,6 +81,8 @@ export {
   faBoxOpen,
   faCalendarDay,
   faCar,
+  faCheck,
+  faChevronRight,
   faCircleCheck,
   faCircleHalfStroke,
   faCircleInfo,
@@ -93,4 +101,5 @@ export {
   faUserPlus,
   faUsers,
   faUtensils,
+  faXmark,
 };
