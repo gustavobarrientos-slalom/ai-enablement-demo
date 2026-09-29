@@ -1,8 +1,23 @@
-import type { AppError } from '../domain/types';
+import type { AppError, Participant, Transfer } from '../domain/types';
 import { formatCents } from './currency';
 
 export const PARTICIPANT_HAS_EXPENSES_MESSAGE = 'Has associated expenses';
 export const NO_EXPENSES_MESSAGE = 'No expenses yet';
+export const SETTLED_UP_MESSAGE = 'Everyone is settled up';
+export const NETS_DO_NOT_SUM_MESSAGE = 'Balances do not add up';
+
+export const BALANCE_HEADINGS = {
+  participant: 'Participant',
+  paid: 'Paid',
+  consumed: 'Consumed',
+  net: 'Net',
+} as const;
+
+/**
+ * Deliberately avoids claiming the plan is the fewest possible transfers; the
+ * greedy algorithm guarantees only the N-1 bound. See the settlement design.
+ */
+export const TRANSFERS_HEADING = 'How to settle up';
 
 export const ERROR_MESSAGES: Record<AppError, string> = {
   EMPTY_EVENT_NAME: 'The event name is required',
@@ -20,6 +35,7 @@ export const ERROR_MESSAGES: Record<AppError, string> = {
   UNKNOWN_PARTICIPANT: 'Select a valid participant',
   NEGATIVE_SHARE: 'Shares cannot be negative',
   SHARES_DO_NOT_SUM: 'The shares must add up to the total',
+  NETS_DO_NOT_SUM: NETS_DO_NOT_SUM_MESSAGE,
 };
 
 export const INVALID_GROUP_HINT = 'Add at least 2 participants to continue';
@@ -40,4 +56,17 @@ export function splitDifferenceLabel(differenceCents: number): string | null {
   return differenceCents < 0
     ? `${formatCents(-differenceCents)} remaining`
     : `${formatCents(differenceCents)} over`;
+}
+
+/** Formats a transfer as `Diana -> Ana $420.00`. */
+export function transferLabel(
+  transfer: Transfer,
+  participants: readonly Participant[],
+): string {
+  const nameOf = (id: string) =>
+    participants.find((participant) => participant.id === id)?.name ?? 'Unknown';
+
+  return `${nameOf(transfer.fromId)} -> ${nameOf(transfer.toId)} ${formatCents(
+    transfer.amountCents,
+  )}`;
 }

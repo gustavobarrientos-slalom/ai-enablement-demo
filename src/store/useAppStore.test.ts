@@ -3,7 +3,9 @@ import {
   STORAGE_KEY,
   STORAGE_VERSION,
   resetAppStore,
+  selectBalances,
   selectCanRemoveParticipant,
+  selectTransfers,
   selectExpensesTotal,
   selectIsGroupValid,
   useAppStore,
@@ -433,5 +435,136 @@ describe('expense persistence', () => {
     await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
     expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
     expect(state().expenses).toEqual([]);
+  });
+});
+
+describe('settlement selectors', () => {
+  function seed(): [string, string] {
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+
+    const [ana, luis] = state().participants;
+
+    return [ana!.id, luis!.id];
+  }
+
+  function dinner(payerId: string, beneficiaryIds: string[], amount: string) {
+    return {
+      concept: 'Dinner',
+      amount,
+      payerId,
+      splitMode: 'equal' as const,
+      beneficiaryIds,
+      customAmounts: {},
+    };
+  }
+
+  function netFor(participantId: string): number {
+    return selectBalances(state()).find(
+      (balance) => balance.participantId === participantId,
+    )!.netCents;
+  }
+
+  it('reports zero balances before any expense', () => {
+    const [ana, luis] = seed();
+
+    expect(netFor(ana)).toBe(0);
+    expect(netFor(luis)).toBe(0);
+  });
+
+  it('produces no transfers when everyone is even', () => {
+    seed();
+
+    const result = selectTransfers(state());
+
+    expect(result).toEqual({ ok: true, value: [] });
+  });
+
+  it('recalculates balances after adding an expense', () => {
+    const [ana, luis] = seed();
+    state().addExpense(dinner(ana, [ana, luis], '100.00'));
+
+    expect(netFor(ana)).toBe(5000);
+    expect(netFor(luis)).toBe(-5000);
+  });
+
+  it('recalculates transfers after adding an expense', () => {
+    const [ana, luis] = seed();
+    state().addExpense(dinner(ana, [ana, luis], '100.00'));
+
+    const result = selectTransfers(state());
+
+    expect(result).toEqual({
+      ok: true,
+      value: [{ fromId: luis, toId: ana, amountCents: 5000 }],
+    });
+  });
+
+  it('recalculates after editing an expense amount', () => {
+    const [ana, luis] = seed();
+    state().addExpense(dinner(ana, [ana, luis], '100.00'));
+
+    const id = state().expenses[0]!.id;
+    state().updateExpense(id, dinner(ana, [ana, luis], '40.00'));
+
+    expect(netFor(ana)).toBe(2000);
+
+    const result = selectTransfers(state());
+    expect(result.ok && result.value).toEqual([
+      { fromId: luis, toId: ana, amountCents: 2000 },
+    ]);
+  });
+
+  it('returns to settled up after deleting the only expense', () => {
+    const [ana, luis] = seed();
+    state().addExpense(dinner(ana, [ana, luis], '100.00'));
+    state().removeExpense(state().expenses[0]!.id);
+
+    expect(netFor(ana)).toBe(0);
+    expect(netFor(luis)).toBe(0);
+    expect(selectTransfers(state())).toEqual({ ok: true, value: [] });
+  });
+
+  it('keeps balances in participant insertion order', () => {
+    const [ana, luis] = seed();
+
+    expect(selectBalances(state()).map((balance) => balance.participantId)).toEqual([
+      ana,
+      luis,
+    ]);
+  });
+
+  it('never writes settlement values to storage', () => {
+    const [ana, luis] = seed();
+    state().addExpense(dinner(ana, [ana, luis], '100.00'));
+
+    selectBalances(state());
+    selectTransfers(state());
+
+    const raw = localStorage.getItem(STORAGE_KEY)!;
+
+    expect(raw).not.toContain('netCents');
+    expect(raw).not.toContain('consumedCents');
+    expect(raw).not.toContain('paidCents');
+    expect(raw).not.toContain('fromId');
+
+    const stored = JSON.parse(raw);
+    expect(Object.keys(stored.state)).toEqual(['eventName', 'participants', 'expenses']);
+  });
+
+  it('recomputes the same result after a reload', async () => {
+    const [ana, luis] = seed();
+    state().addExpense(dinner(ana, [ana, luis], '100.00'));
+
+    const before = selectTransfers(state());
+
+    const stored = localStorage.getItem(STORAGE_KEY)!;
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, stored);
+    await useAppStore.persist.rehydrate();
+
+    expect(selectTransfers(state())).toEqual(before);
+    expect(netFor(ana)).toBe(5000);
+    expect(netFor(luis)).toBe(-5000);
   });
 });

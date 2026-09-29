@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { GroupTab } from './components/GroupTab';
 import { ExpensesTab } from './components/ExpensesTab';
+import { SettlementTab } from './components/SettlementTab';
 import { TabBar, type TabId } from './components/TabBar';
 import { selectIsGroupValid, useAppStore } from './store/useAppStore';
 import { faUsers } from './ui/icons';
@@ -45,7 +46,7 @@ export function App() {
         )}
         {activeTab === 'settlement' && (
           <section role="tabpanel" id="panel-settlement" aria-labelledby="tab-settlement">
-            <p className="text-sm text-slate-500">Coming soon: who pays whom.</p>
+            <SettlementTab />
           </section>
         )}
       </main>

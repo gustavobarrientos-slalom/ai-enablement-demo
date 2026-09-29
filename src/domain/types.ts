@@ -29,6 +29,21 @@ export interface ExpenseDraft {
   customAmounts: Record<string, string>;
 }
 
+/** Derived from expenses on read; never stored. */
+export interface Balance {
+  participantId: string;
+  paidCents: number;
+  consumedCents: number;
+  netCents: number;
+}
+
+/** A directional payment that moves one participant closer to settled. */
+export interface Transfer {
+  fromId: string;
+  toId: string;
+  amountCents: number;
+}
+
 export interface GroupState {
   eventName: string;
   participants: Participant[];
@@ -54,7 +69,9 @@ export type ExpenseError =
   | 'NEGATIVE_SHARE'
   | 'SHARES_DO_NOT_SUM';
 
-export type AppError = GroupError | ExpenseError;
+export type SettlementError = 'NETS_DO_NOT_SUM';
+
+export type AppError = GroupError | ExpenseError | SettlementError;
 
 export type Result<T, E = AppError> =
   | { ok: true; value: T }

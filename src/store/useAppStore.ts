@@ -10,13 +10,19 @@ import {
   validateEventName,
 } from '../domain/group';
 import { expensesTotal, validateExpense } from '../domain/expense';
+import { computeBalances } from '../domain/balance';
+import { computeTransfers } from '../domain/settle';
 import { createId } from '../lib/ids';
 import type {
   AppError,
+  Balance,
   Expense,
   ExpenseDraft,
   GroupState,
   Participant,
+  Result,
+  SettlementError,
+  Transfer,
 } from '../domain/types';
 
 export const STORAGE_KEY = 'split:v2';
@@ -164,6 +170,22 @@ export function selectExpenses(state: AppState): Expense[] {
 
 export function selectExpensesTotal(state: AppState): number {
   return expensesTotal(state.expenses);
+}
+
+/**
+ * Derived on read. Nothing here is persisted, and these must not be called
+ * from inside a Zustand selector: they build new arrays every time, which
+ * would make useSyncExternalStore re-render forever. Components select the
+ * raw participants and expenses and call these during render instead.
+ */
+export function selectBalances(state: AppState): Balance[] {
+  return computeBalances(state.participants, state.expenses);
+}
+
+export function selectTransfers(
+  state: AppState,
+): Result<Transfer[], SettlementError> {
+  return computeTransfers(selectBalances(state));
 }
 
 export function resetAppStore(): void {
