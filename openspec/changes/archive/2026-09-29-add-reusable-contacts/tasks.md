@@ -49,6 +49,6 @@
 
 ## 8. Verification
 
-- [ ] 8.1 Run `npm test` and confirm all new and existing tests pass
+- [x] 8.1 Run `npm test` and confirm all new and existing tests pass
 - [x] 8.2 Run `npm run build` to confirm type-checking passes
 - [x] 8.3 Manually verify: renaming/deleting a contact does not change any event's participant names, and importing a shared event adds missing contacts

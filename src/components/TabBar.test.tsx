@@ -12,6 +12,15 @@ function addParticipants(...names: string[]) {
   }
 }
 
+async function revealParticipantActions(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+) {
+  const row = screen.getByRole('group', { name: `Remove ${name} row` });
+  row.focus();
+  await user.keyboard('{ArrowLeft}');
+}
+
 beforeEach(() => {
   localStorage.clear();
   resetAppStore();
@@ -67,6 +76,7 @@ describe('TabBar', () => {
     addParticipants('Ana', 'Luis');
     render(<App />);
 
+    await revealParticipantActions(user, 'Luis');
     await user.click(screen.getByRole('button', { name: 'Remove Luis' }));
     await user.click(screen.getByRole('button', { name: 'Confirm removal' }));
 
@@ -105,6 +115,7 @@ describe('TabBar', () => {
     expect(screen.getByTestId('shell-bottom-dock')).toHaveClass('min-h-[calc(4rem+var(--safe-bottom))]');
 
     await user.click(screen.getByRole('tab', { name: 'Group' }));
+    await revealParticipantActions(user, 'Luis');
     await user.click(screen.getByRole('button', { name: 'Remove Luis' }));
     await user.click(screen.getByRole('button', { name: 'Confirm removal' }));
 

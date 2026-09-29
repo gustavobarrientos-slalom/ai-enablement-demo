@@ -78,7 +78,9 @@ describe('theme color contrast', () => {
     const track = css.match(/\.md-segmented\s*\{([^}]+)\}/)?.[1];
     const segment = css.match(/\.md-segment\s*\{([^}]+)\}/)?.[1];
     const highlight = css.match(/\.md-segmented::before\s*\{([^}]+)\}/)?.[1];
-    const selected = css.match(/\.md-segment\[aria-checked='true'\]\s*\{([^}]+)\}/)?.[1];
+    const selected = css.match(
+      /\.md-segment:is\(\[aria-checked='true'\], \[aria-pressed='true'\]\)\s*\{([^}]+)\}/,
+    )?.[1];
     expect(track).toContain('relative flex w-full rounded-full border border-border bg-surface-muted p-0.5 shadow-inner');
     expect(track).not.toMatch(/\bgap-/);
     expect(segment).toContain('mobile-target');
@@ -94,7 +96,9 @@ describe('theme color contrast', () => {
     expect(css).toContain(".md-segmented[data-selected-index='2']::before");
     expect(selected).toContain('text-primary-contrast');
     expect(css).toContain('.md-segment:focus-visible');
-    expect(css).toContain(".md-segment[aria-checked='true']:focus-visible");
+    expect(css).toContain(
+      ".md-segment:is([aria-checked='true'], [aria-pressed='true']):focus-visible",
+    );
     expect(css).toContain('@apply outline-primary-contrast');
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration: 0\.01ms !important/);
   });
@@ -103,7 +107,9 @@ describe('theme color contrast', () => {
     expect(css).toContain(".md-field[aria-invalid='true']:focus-visible");
     expect(css).toContain(".md-choice[aria-checked='true']");
     expect(css).toContain(".md-choice[aria-pressed='true']");
-    expect(css).toContain(".md-segment[aria-checked='true']");
+    expect(css).toContain(
+      ".md-segment:is([aria-checked='true'], [aria-pressed='true'])",
+    );
     expect(css).toContain('.md-segment:focus-visible');
     expect(css).toContain('.md-filled-button:disabled');
     expect(css).toContain('.md-check:disabled');
