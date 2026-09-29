@@ -1,5 +1,5 @@
-export function buildShareUrl(origin: string, pathname: string, payload: string): string {
-  const url = new URL(pathname, origin);
+export function buildShareUrl(baseUrl: string, payload: string): string {
+  const url = new URL(baseUrl);
   url.search = '';
   url.hash = `share=${payload}`;
   return url.toString();

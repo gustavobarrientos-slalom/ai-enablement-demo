@@ -1,0 +1,19 @@
+[package]
+name = "split"
+version = "0.1.0"
+description = "Split — group expense splitting"
+edition = "2021"
+publish = false
+
+[lib]
+name = "split_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-clipboard-manager = "2"

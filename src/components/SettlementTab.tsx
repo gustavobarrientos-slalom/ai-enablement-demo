@@ -62,8 +62,8 @@ export function SettlementTab() {
     setExportError(null);
 
     try {
-      const { downloadSettlementPdf } = await import('../pdf/downloadSettlementPdf');
-      await downloadSettlementPdf(activeEvent);
+      const { exportSettlementPdf } = await import('../pdf/exportSettlementPdf');
+      await exportSettlementPdf(activeEvent);
     } catch (error) {
       setExportError(
         error instanceof Error

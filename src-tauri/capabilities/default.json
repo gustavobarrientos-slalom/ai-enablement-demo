@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least-privilege permissions: save dialog, write to the chosen path, copy text.",
+  "windows": ["main"],
+  "permissions": [
+    "dialog:allow-save",
+    "fs:allow-write-file",
+    "clipboard-manager:allow-write-text"
+  ]
+}

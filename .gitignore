@@ -150,3 +150,7 @@ vite.config.ts.timestamp-*
 # Vite / build output
 dist-ssr
 node_modules/.tmp
+
+# Tauri desktop build output
+src-tauri/target
+src-tauri/gen

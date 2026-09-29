@@ -11,7 +11,7 @@ import { AppShell } from './components/shell/AppShell';
 import { AppBar } from './components/shell/AppBar';
 import { usePrefersReducedMotion } from './ui/usePrefersReducedMotion';
 import { selectActiveEvent, selectIsActiveEventEditable, selectIsGroupValid, useAppStore } from './store/useAppStore';
-import { copyText } from './lib/clipboard';
+import { copyText, getShareBaseUrl, platformKind } from './platform';
 import { buildShareUrl, readSharePayload } from './lib/shareUrl';
 import {
   EVENT_IMPORTED,
@@ -67,6 +67,11 @@ export function App() {
   }
 
   useEffect(() => {
+    // Shared links only open in the web app; desktop never reads the hash.
+    if (platformKind !== 'web') {
+      return;
+    }
+
     const payload = readSharePayload(window.location.hash);
 
     if (payload === null) {
@@ -103,11 +108,7 @@ export function App() {
       return;
     }
 
-    const url = buildShareUrl(
-      window.location.origin,
-      window.location.pathname,
-      encodeShare(activeEvent),
-    );
+    const url = buildShareUrl(getShareBaseUrl(), encodeShare(activeEvent));
 
     if (await copyText(url)) {
       showMessage(LINK_COPIED);

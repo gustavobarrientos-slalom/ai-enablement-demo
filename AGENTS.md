@@ -8,7 +8,8 @@ Guidance for AI agents working in this repository.
 shared expenses, and the app calculates who pays whom so everyone ends up even,
 using as few transfers as possible.
 
-No backend, no accounts. Everything runs in the browser.
+No backend, no accounts. Everything runs client-side: in the browser (GitHub
+Pages) or in a Tauri 2 desktop shell wrapping the same web build.
 
 ## Stack
 
@@ -20,6 +21,7 @@ No backend, no accounts. Everything runs in the browser.
 | Icons | Font Awesome Free via `@fortawesome/react-fontawesome` |
 | Tests | Vitest |
 | Deploy | GitHub Pages via GitHub Actions |
+| Desktop | Tauri 2 (`src-tauri/`), released by `desktop-release.yml` on `v*` tags |
 
 ## Commands
 
@@ -29,7 +31,16 @@ npm run dev       # local dev server
 npm run build     # type-check + production build
 npm run preview   # preview the production build
 npm test          # run Vitest
+
+# Desktop (requires Rust)
+npm run desktop:dev    # Tauri window backed by the Vite dev server
+VITE_SHARE_BASE_URL=https://<owner>.github.io/ai-enablement-demo/ \
+  npm run desktop:build  # native installers in src-tauri/target
 ```
+
+Desktop builds fail fast unless `VITE_SHARE_BASE_URL` is an absolute https URL
+(share links must open the hosted web app). `desktop:dev` does not need it;
+share links then point at the local dev server.
 
 ## Architecture
 
@@ -39,6 +50,7 @@ src/
   store/     Zustand store: holds state, calls domain functions
   ui/        English copy, currency formatting, icon registry
   lib/       side-effecting helpers (id generation) kept out of the domain
+  platform/  web vs. desktop (Tauri) adapters: file save, clipboard, share URL
   components/ React components (presentation + wiring)
 ```
 
@@ -46,6 +58,14 @@ src/
   UI-related. This is where splitting, balance, and settlement algorithms live.
 - **The store only holds state.** It calls domain functions; it does not
   reimplement business rules.
+- **Browser/OS APIs go through `src/platform`.** Outside `src/platform`, do not
+  touch `navigator.clipboard`, create download anchors, read
+  `window.location` for share links, or import `@tauri-apps/*`; call
+  `saveFile`, `copyText`, `getShareBaseUrl` instead. Enforced by
+  `src/platformBoundary.test.ts`.
+- **Desktop permissions are least-privilege.** The Tauri capability grants only
+  `dialog:allow-save`, `fs:allow-write-file`,
+  `clipboard-manager:allow-write-text` (checked by `src/desktopConfig.test.ts`).
 - **Derived values are never stored.** Balances and transfers are computed from
   state on demand.
 

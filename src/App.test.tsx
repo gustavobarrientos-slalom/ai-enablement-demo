@@ -1,10 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import { decodeShare, encodeShare } from './domain/share';
 import { STORAGE_KEY, resetAppStore, useAppStore } from './store/useAppStore';
 import { LINK_COPIED, EVENT_IMPORTED, INVALID_SHARE_LINK } from './ui/messages';
+
+const platformState = vi.hoisted(() => ({ kind: 'web' as 'web' | 'desktop' }));
+
+vi.mock('./platform', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./platform')>();
+
+  return {
+    ...actual,
+    get platformKind() {
+      return platformState.kind;
+    },
+  };
+});
 
 function setShareHash(payload: string): void {
   window.history.replaceState(
@@ -44,6 +57,7 @@ afterEach(() => {
   }
   Reflect.deleteProperty(document, 'execCommand');
   window.history.replaceState(null, '', '/ai-enablement-demo/');
+  platformState.kind = 'web';
   vi.restoreAllMocks();
 });
 
@@ -105,7 +119,7 @@ describe('event sharing', () => {
     expect(shareButton.querySelector('svg')).toHaveAttribute('data-icon', 'share-from-square');
     await user.click(screen.getByRole('button', { name: 'Share' }));
 
-    expect(writeText).toHaveBeenCalledOnce();
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
     const copiedUrl = new URL(String(writeText.mock.calls[0]?.[0]));
     expect(copiedUrl.pathname).toBe('/ai-enablement-demo/');
     expect(copiedUrl.search).toBe('');
@@ -125,7 +139,7 @@ describe('event sharing', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
     await act(async () => {
-      await Promise.resolve();
+      await vi.dynamicImportSettled();
     });
     expect(screen.getByRole('status')).toHaveTextContent(LINK_COPIED);
     await act(async () => {
@@ -156,6 +170,24 @@ describe('event sharing', () => {
     expect(
       useAppStore.getState().events.slice(0, 2).map((event) => JSON.stringify(event)),
     ).toEqual(originals);
+  });
+
+  it('ignores a valid share link on the desktop platform', async () => {
+    platformState.kind = 'desktop';
+    const id = createEvent('Shared');
+    useAppStore.getState().addParticipant('Ana');
+    const event = useAppStore.getState().events.find((candidate) => candidate.id === id)!;
+    const payload = encodeShare(event);
+    setShareHash(payload);
+
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(useAppStore.getState().events).toHaveLength(1);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(window.location.hash).toBe(`#share=${payload}`);
   });
 
   it('does not import again when remounted after the URL hash is cleared', async () => {

@@ -1,3 +1,22 @@
+import { webShareBaseUrl } from './shareBase';
+import type { Platform } from './types';
+
+export async function saveFile(name: string, bytes: Uint8Array<ArrayBuffer>): Promise<void> {
+  const url = URL.createObjectURL(new Blob([bytes]));
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    // Revoking immediately can cancel the download in some browsers.
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
 export async function copyText(text: string): Promise<boolean> {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     try {
@@ -28,3 +47,7 @@ export async function copyText(text: string): Promise<boolean> {
     textarea.remove();
   }
 }
+
+export const getShareBaseUrl = webShareBaseUrl;
+
+export const webPlatform: Platform = { saveFile, copyText, getShareBaseUrl };

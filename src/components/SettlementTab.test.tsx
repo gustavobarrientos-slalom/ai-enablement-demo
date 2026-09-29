@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SettlementTab } from './SettlementTab';
 import { App } from '../App';
@@ -10,6 +10,19 @@ import {
   selectParticipants,
   useAppStore,
 } from '../store/useAppStore';
+
+const saveFileMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../platform')>()),
+  saveFile: saveFileMock,
+}));
+vi.mock('@react-pdf/renderer', () => ({
+  pdf: () => ({
+    toBlob: () => Promise.resolve({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) }),
+  }),
+}));
+vi.mock('../pdf/SettlementPdf', () => ({ createSettlementPdfDocument: () => null }));
 
 function state() {
   return useAppStore.getState();
@@ -96,6 +109,20 @@ describe('PDF export controls', () => {
     expect(screen.getByRole('button', { name: 'Export PDF' })).toBeEnabled();
   });
 
+  it('shows no export error when the desktop Save as dialog is cancelled', async () => {
+    // A cancelled desktop dialog resolves without writing anything.
+    saveFileMock.mockReset().mockResolvedValue(undefined);
+    const [ana, luis] = seed(['Ana', 'Luis']);
+    addEqual('Dinner', '100.00', ana!, [ana!, luis!]);
+    render(<SettlementTab />);
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Export PDF' }));
+
+    await waitFor(() => expect(saveFileMock).toHaveBeenCalledOnce());
+    expect(saveFileMock.mock.calls[0]![0]).toMatch(/-settlement\.pdf$/);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export PDF' })).toBeEnabled());
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
 });
 
 describe('balance table', () => {
