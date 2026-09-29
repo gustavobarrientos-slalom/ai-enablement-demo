@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Split group expenses and figure out who pays whom." />
     <title>Split — Split group expenses</title>
+    <script>
+      (() => {
+        let preference = 'system';
+
+        try {
+          const stored = localStorage.getItem('split:theme');
+          if (stored === 'light' || stored === 'dark' || stored === 'system') {
+            preference = stored;
+          }
+        } catch {
+          preference = 'system';
+        }
+
+        const dark =
+          preference === 'dark' ||
+          (preference === 'system' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

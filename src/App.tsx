@@ -6,6 +6,7 @@ import { GroupTab } from './components/GroupTab';
 import { ExpensesTab } from './components/ExpensesTab';
 import { SettlementTab } from './components/SettlementTab';
 import { TabBar, type TabId } from './components/TabBar';
+import { ThemeControl } from './components/ThemeControl';
 import { selectActiveEvent, selectIsGroupValid, useAppStore } from './store/useAppStore';
 import { copyText } from './lib/clipboard';
 import { buildShareUrl, readSharePayload } from './lib/shareUrl';
@@ -91,15 +92,15 @@ export function App() {
             type="button"
             aria-label={BACK_TO_EVENTS_LABEL}
             onClick={closeEvent}
-            className="min-h-11 min-w-11 shrink-0 rounded-lg px-3 text-slate-600 hover:bg-slate-100"
+            className="min-h-11 min-w-11 shrink-0 rounded-lg px-3 text-text-muted hover:bg-surface-muted"
           >
             <FontAwesomeIcon icon={faArrowLeft} />
           </button>
         )}
-        <FontAwesomeIcon icon={faUsers} className="text-lg text-slate-500" />
+        <FontAwesomeIcon icon={faUsers} className="text-lg text-text-muted" />
         <div className="min-w-0">
           <h1 className="text-xl font-bold leading-tight">Split</h1>
-          <p className="truncate text-sm text-slate-500">
+          <p className="truncate text-sm text-text-muted">
             {activeEvent
               ? `${activeEvent.name} \u00b7 ${EVENT_STATUS_LABELS[activeEvent.status]}`
               : 'Your events'}
@@ -109,16 +110,17 @@ export function App() {
           <button
             type="button"
             onClick={shareActiveEvent}
-            className="ml-auto flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-text-muted hover:bg-surface-muted"
           >
             <FontAwesomeIcon icon={faShareFromSquare} />
             Share
           </button>
         )}
+        <ThemeControl />
       </header>
 
       {message && (
-        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p role="status" className="rounded-lg bg-success-bg px-3 py-2 text-sm text-success-fg">
           {message}
         </p>
       )}

@@ -79,34 +79,34 @@ export function SettlementTab() {
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-700">Balances</h2>
+          <h2 className="text-sm font-semibold text-text">Balances</h2>
           <button
             type="button"
             onClick={exportPdf}
             disabled={expenses.length === 0 || isExporting}
-            className="min-h-11 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 rounded-lg bg-primary px-3 text-sm font-medium text-primary-contrast disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isExporting ? 'Exporting…' : 'Export PDF'}
           </button>
         </div>
         {exportError && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-danger-fg">
             {exportError}
           </p>
         )}
 
         {participants.length === 0 ? (
-          <p className="text-sm text-slate-500">No participants yet.</p>
+          <p className="text-sm text-text-muted">No participants yet.</p>
         ) : (
           <ul aria-label="Balances" className="flex flex-col gap-2">
             {balances.map((balance) => (
               <li
                 key={balance.participantId}
-                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2"
               >
                 <div className="min-w-0">
                   <p className="truncate text-base">{nameOf(balance.participantId)}</p>
-                  <p className="truncate text-xs text-slate-500">
+                  <p className="truncate text-xs text-text-muted">
                     {BALANCE_HEADINGS.paid} {formatCents(balance.paidCents)} &middot;{' '}
                     {BALANCE_HEADINGS.consumed} {formatCents(balance.consumedCents)}
                   </p>
@@ -116,10 +116,10 @@ export function SettlementTab() {
                   className={[
                     'shrink-0 text-base font-semibold',
                     balance.netCents < 0
-                      ? 'text-red-600'
+                      ? 'text-danger-fg'
                       : balance.netCents > 0
-                        ? 'text-emerald-700'
-                        : 'text-slate-500',
+                        ? 'text-success-fg'
+                        : 'text-text-muted',
                   ].join(' ')}
                 >
                   {formatCents(balance.netCents)}
@@ -132,7 +132,7 @@ export function SettlementTab() {
 
       {breakdown.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-slate-700">
+          <h2 className="text-sm font-semibold text-text">
             {CATEGORY_BREAKDOWN_HEADING}
           </h2>
 
@@ -141,12 +141,12 @@ export function SettlementTab() {
               <li
                 key={row.category}
                 data-testid={`category-total-${row.category}`}
-                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2"
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <FontAwesomeIcon
                     icon={CATEGORY_ICONS[row.category]}
-                    className="w-5 shrink-0 text-slate-500"
+                    className="w-5 shrink-0 text-text-muted"
                   />
                   <span className="truncate text-base">
                     {CATEGORY_LABELS[row.category]}
@@ -161,7 +161,7 @@ export function SettlementTab() {
                   </span>
                   <span
                     data-testid={`category-percent-${row.category}`}
-                    className="text-xs text-slate-500"
+                    className="text-xs text-text-muted"
                   >
                     {formatPercent(categoryPercent(row.totalCents, groupTotal))}
                   </span>
@@ -173,24 +173,24 @@ export function SettlementTab() {
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-slate-700">{TRANSFERS_HEADING}</h2>
+        <h2 className="text-sm font-semibold text-text">{TRANSFERS_HEADING}</h2>
 
         {!plan.ok ? (
           <p
             role="alert"
-            className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+            className="flex items-center gap-2 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger-fg"
           >
             <FontAwesomeIcon icon={faTriangleExclamation} />
             {NETS_DO_NOT_SUM_MESSAGE}
           </p>
         ) : plan.value.length === 0 ? (
-          <p className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-600">
-            <FontAwesomeIcon icon={faCircleCheck} className="text-2xl text-emerald-600" />
+          <p className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-3 py-6 text-sm text-text-muted">
+            <FontAwesomeIcon icon={faCircleCheck} className="text-2xl text-success-fg" />
             {SETTLED_UP_MESSAGE}
           </p>
         ) : (
           <>
-            <p data-testid="transfer-progress" className="text-sm text-slate-600">
+            <p data-testid="transfer-progress" className="text-sm text-text-muted">
               {transferProgressLabel(
                 plan.value.filter((transfer) =>
                   isTransferPaid(transfer, paidTransfers),
@@ -201,7 +201,7 @@ export function SettlementTab() {
             {plan.value.every((transfer) =>
               isTransferPaid(transfer, paidTransfers),
             ) && (
-              <p data-testid="all-transfers-paid" className="text-sm font-semibold text-emerald-700">
+              <p data-testid="all-transfers-paid" className="text-sm font-semibold text-success-fg">
                 {ALL_PAID_EVENT_CLOSED_MESSAGE}
               </p>
             )}
@@ -213,7 +213,7 @@ export function SettlementTab() {
                 return (
                   <li
                     key={`${transfer.fromId}-${transfer.toId}-${transfer.amountCents}`}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2"
                   >
                     <span className="min-w-0 flex-1 truncate text-base">
                       {nameOf(transfer.fromId)} &rarr; {nameOf(transfer.toId)}

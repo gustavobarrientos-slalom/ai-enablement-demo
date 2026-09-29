@@ -3,12 +3,48 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+    --color-canvas: #f8fafc;
+    --color-surface: #ffffff;
+    --color-surface-muted: #e2e8f0;
+    --color-text: #0f172a;
+    --color-text-muted: #334155;
+    --color-border: #64748b;
+    --color-primary: #0f172a;
+    --color-primary-contrast: #ffffff;
+    --color-success-bg: #dcfce7;
+    --color-success-fg: #166534;
+    --color-warning-bg: #fef3c7;
+    --color-warning-fg: #78350f;
+    --color-danger-bg: #fee2e2;
+    --color-danger-fg: #991b1b;
+  }
+
+  :root.dark {
+    color-scheme: dark;
+    --color-canvas: #0f172a;
+    --color-surface: #1e293b;
+    --color-surface-muted: #334155;
+    --color-text: #f8fafc;
+    --color-text-muted: #cbd5e1;
+    --color-border: #94a3b8;
+    --color-primary: #e2e8f0;
+    --color-primary-contrast: #0f172a;
+    --color-success-bg: #064e3b;
+    --color-success-fg: #d1fae5;
+    --color-warning-bg: #713f12;
+    --color-warning-fg: #fef3c7;
+    --color-danger-bg: #7f1d1d;
+    --color-danger-fg: #fee2e2;
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
   }
 
   body {
-    @apply min-h-screen bg-slate-50 text-slate-900 antialiased;
+    @apply min-h-screen bg-canvas text-text antialiased;
     font-family:
       ui-sans-serif,
       system-ui,
@@ -16,5 +52,10 @@
       'Segoe UI',
       Roboto,
       sans-serif;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-text-muted opacity-100;
   }
 }

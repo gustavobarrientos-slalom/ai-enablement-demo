@@ -144,7 +144,7 @@ export function ExpenseForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
       <div className="flex flex-col gap-1">
-        <label htmlFor={`${formId}-concept`} className="text-sm font-semibold text-slate-700">
+        <label htmlFor={`${formId}-concept`} className="text-sm font-semibold text-text">
           Concept
         </label>
         <input
@@ -154,12 +154,12 @@ export function ExpenseForm({
           maxLength={CONCEPT_MAX_LENGTH + 1}
           placeholder="Dinner"
           onChange={(event) => update({ concept: event.target.value })}
-          className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+          className="min-h-11 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
         />
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor={`${formId}-amount`} className="text-sm font-semibold text-slate-700">
+        <label htmlFor={`${formId}-amount`} className="text-sm font-semibold text-text">
           Amount
         </label>
         <input
@@ -169,12 +169,12 @@ export function ExpenseForm({
           value={draft.amount}
           placeholder="0.00"
           onChange={(event) => update({ amount: event.target.value })}
-          className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+          className="min-h-11 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
         />
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-semibold text-slate-700">{TIP_LABEL}</legend>
+        <legend className="text-sm font-semibold text-text">{TIP_LABEL}</legend>
 
         <div className="flex gap-2" role="radiogroup" aria-label={TIP_LABEL}>
           {(['none', 'percent', 'fixed'] as const).map((mode) => (
@@ -187,8 +187,8 @@ export function ExpenseForm({
               className={[
                 'min-h-11 flex-1 rounded-lg border px-2 text-sm',
                 draft.tipMode === mode
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-300 bg-white text-slate-700',
+                  ? 'border-primary bg-primary text-primary-contrast'
+                  : 'border-border bg-surface text-text-muted',
               ].join(' ')}
             >
               {TIP_MODE_LABELS[mode]}
@@ -200,7 +200,7 @@ export function ExpenseForm({
           <div className="flex flex-col gap-1">
             <label
               htmlFor={`${formId}-tip`}
-              className="text-sm font-semibold text-slate-700"
+              className="text-sm font-semibold text-text"
             >
               {draft.tipMode === 'percent' ? 'Tip percentage' : 'Tip amount'}
             </label>
@@ -211,10 +211,10 @@ export function ExpenseForm({
               value={draft.tipValue}
               placeholder={draft.tipMode === 'percent' ? '10' : '0.00'}
               onChange={(event) => update({ tipValue: event.target.value })}
-              className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+              className="min-h-11 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
             />
             {tipPreview && (
-              <p className="text-sm text-slate-600" data-testid="tip-preview">
+              <p className="text-sm text-text-muted" data-testid="tip-preview">
                 {tipPreview}
               </p>
             )}
@@ -223,14 +223,14 @@ export function ExpenseForm({
       </fieldset>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor={`${formId}-payer`} className="text-sm font-semibold text-slate-700">
+        <label htmlFor={`${formId}-payer`} className="text-sm font-semibold text-text">
           Paid by
         </label>
         <select
           id={`${formId}-payer`}
           value={draft.payerId}
           onChange={(event) => update({ payerId: event.target.value })}
-          className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+          className="min-h-11 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
         >
           {participants.map((participant) => (
             <option key={participant.id} value={participant.id}>
@@ -243,7 +243,7 @@ export function ExpenseForm({
       <div className="flex flex-col gap-1">
         <label
           htmlFor={`${formId}-category`}
-          className="text-sm font-semibold text-slate-700"
+          className="text-sm font-semibold text-text"
         >
           Category
         </label>
@@ -251,13 +251,13 @@ export function ExpenseForm({
           <FontAwesomeIcon
             icon={CATEGORY_ICONS[draft.category]}
             data-testid="category-preview"
-            className="w-5 shrink-0 text-slate-500"
+            className="w-5 shrink-0 text-text-muted"
           />
           <select
             id={`${formId}-category`}
             value={draft.category}
             onChange={(event) => update({ category: event.target.value as Category })}
-            className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+            className="min-h-11 flex-1 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
           >
             {CATEGORIES.map((category) => (
               <option key={category} value={category}>
@@ -269,7 +269,7 @@ export function ExpenseForm({
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-semibold text-slate-700">Split between</legend>
+        <legend className="text-sm font-semibold text-text">Split between</legend>
 
         <div className="flex gap-2" role="radiogroup" aria-label="Split mode">
           {(['equal', 'custom'] as const).map((mode) => (
@@ -282,8 +282,8 @@ export function ExpenseForm({
               className={[
                 'min-h-11 flex-1 rounded-lg border px-3 text-sm',
                 draft.splitMode === mode
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-300 bg-white text-slate-700',
+                  ? 'border-primary bg-primary text-primary-contrast'
+                  : 'border-border bg-surface text-text-muted',
               ].join(' ')}
             >
               {mode === 'equal' ? 'Equally' : 'Custom'}
@@ -298,7 +298,7 @@ export function ExpenseForm({
             return (
               <li
                 key={participant.id}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2"
               >
                 <input
                   id={`${formId}-beneficiary-${participant.id}`}
@@ -328,7 +328,7 @@ export function ExpenseForm({
                         },
                       })
                     }
-                    className="min-h-11 w-24 rounded-lg border border-slate-300 px-2 text-right text-base focus:border-slate-500 focus:outline-none"
+                    className="min-h-11 w-24 rounded-lg border border-border bg-surface px-2 text-right text-base focus:border-primary focus:outline-none"
                   />
                 )}
               </li>
@@ -337,14 +337,14 @@ export function ExpenseForm({
         </ul>
 
         {differenceLabel && (
-          <p role="status" className="text-sm font-medium text-amber-700">
+          <p role="status" className="text-sm font-medium text-warning-fg">
             {differenceLabel}
           </p>
         )}
       </fieldset>
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger-fg">
           {ERROR_MESSAGES[error]}
         </p>
       )}
@@ -355,8 +355,10 @@ export function ExpenseForm({
           disabled={unbalanced}
           aria-disabled={unbalanced}
           className={[
-            'min-h-11 flex-1 rounded-lg px-3 text-base text-white',
-            unbalanced ? 'cursor-not-allowed bg-slate-400' : 'bg-slate-900',
+            'min-h-11 flex-1 rounded-lg px-3 text-base',
+            unbalanced
+              ? 'cursor-not-allowed bg-surface-muted text-text-muted'
+              : 'bg-primary text-primary-contrast',
           ].join(' ')}
         >
           {submitLabel}
@@ -365,7 +367,7 @@ export function ExpenseForm({
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-11 rounded-lg border border-slate-300 px-3 text-base text-slate-700"
+            className="min-h-11 rounded-lg border border-border px-3 text-base text-text-muted"
           >
             Cancel
           </button>

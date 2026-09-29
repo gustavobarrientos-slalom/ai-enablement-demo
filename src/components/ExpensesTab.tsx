@@ -64,7 +64,7 @@ export function ExpensesTab() {
       {!isEditable && (
         <p
           role="status"
-          className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700"
+          className="flex items-center gap-2 rounded-lg bg-surface-muted px-3 py-2 text-sm text-text-muted"
         >
           <FontAwesomeIcon icon={faBoxArchive} />
           {ARCHIVED_READ_ONLY_MESSAGE}
@@ -73,7 +73,7 @@ export function ExpensesTab() {
 
       {isEditable && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-slate-700">New expense</h2>
+          <h2 className="text-sm font-semibold text-text">New expense</h2>
           <ExpenseForm
             participants={participants}
             submitLabel="Add expense"
@@ -84,15 +84,15 @@ export function ExpensesTab() {
 
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-700">Expenses ({expenses.length})</h2>
-          <p className="text-base font-semibold text-slate-900">
+          <h2 className="text-sm font-semibold text-text">Expenses ({expenses.length})</h2>
+          <p className="text-base font-semibold text-text">
             Total: <span data-testid="expenses-total">{formatCents(total)}</span>
           </p>
         </div>
 
         {expenses.length === 0 ? (
-          <p className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-500">
-            <FontAwesomeIcon icon={faReceipt} className="text-2xl text-slate-400" />
+          <p className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-3 py-6 text-sm text-text-muted">
+            <FontAwesomeIcon icon={faReceipt} className="text-2xl text-text-muted" />
             {NO_EXPENSES_MESSAGE}
           </p>
         ) : (
@@ -100,7 +100,7 @@ export function ExpensesTab() {
             {expenses.map((expense) => (
               <li
                 key={expense.id}
-                className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-3 py-2"
               >
                 {isEditable && editingId === expense.id ? (
                   <ExpenseForm
@@ -116,18 +116,18 @@ export function ExpensesTab() {
                       icon={CATEGORY_ICONS[expense.category]}
                       data-testid={`category-${expense.id}`}
                       title={CATEGORY_LABELS[expense.category]}
-                      className="w-5 shrink-0 text-slate-500"
+                      className="w-5 shrink-0 text-text-muted"
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-base">{expense.concept}</p>
-                      <p className="truncate text-xs text-slate-500">
+                      <p className="truncate text-xs text-text-muted">
                         Paid by {participantName(expense.payerId)} &middot;{' '}
                         {expense.shares.length}{' '}
                         {expense.shares.length === 1 ? 'beneficiary' : 'beneficiaries'}
                       </p>
                       {expense.tip && expense.tip.amountCents > 0 && (
                         <p
-                          className="truncate text-xs text-slate-500"
+                          className="truncate text-xs text-text-muted"
                           data-testid={`tip-${expense.id}`}
                         >
                           <FontAwesomeIcon icon={faCoins} className="mr-1" />
@@ -145,7 +145,7 @@ export function ExpensesTab() {
                         type="button"
                         aria-label={`Edit ${expense.concept}`}
                         onClick={() => setEditingId(expense.id)}
-                        className="min-h-11 min-w-11 rounded-lg px-3 text-slate-600 hover:bg-slate-100"
+                        className="min-h-11 min-w-11 rounded-lg px-3 text-text-muted hover:bg-surface-muted"
                       >
                         <FontAwesomeIcon icon={faPen} />
                       </button>
@@ -153,7 +153,7 @@ export function ExpensesTab() {
                         type="button"
                         aria-label={`Delete ${expense.concept}`}
                         onClick={() => removeExpense(expense.id)}
-                        className="min-h-11 min-w-11 rounded-lg px-3 text-slate-600 hover:bg-slate-100 hover:text-red-600"
+                        className="min-h-11 min-w-11 rounded-lg px-3 text-text-muted hover:bg-surface-muted hover:text-danger-fg"
                       >
                         <FontAwesomeIcon icon={faTrash} />
                       </button>

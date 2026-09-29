@@ -5,12 +5,18 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { categorySvg, type SettlementExportModel } from './exportModel';
 import {
   createSettlementPdfDocument,
+  PDF_THEME,
+  PDF_THEME_COLORS,
 } from './SettlementPdf';
 
 afterEach(() => vi.unstubAllGlobals());
 
 it('renders the Unicode settlement document using the bundled TTF font', async () => {
   const fontBytes = readFileSync(new URL('./assets/NotoSans.ttf', import.meta.url));
+  const hasDarkClass = vi.fn(() => true);
+  vi.stubGlobal('document', {
+    documentElement: { classList: { contains: hasDarkClass } },
+  });
   vi.stubGlobal('fetch', async (input: string | URL | Request) => {
     const url =
       typeof input === 'string'
@@ -54,4 +60,9 @@ it('renders the Unicode settlement document using the bundled TTF font', async (
 
   expect(buffer.subarray(0, 8).toString()).toBe('%PDF-1.3');
   expect(buffer.byteLength).toBeGreaterThan(1000);
+  expect(PDF_THEME).toBe('light');
+  expect(PDF_THEME_COLORS.background).toBe('#ffffff');
+  expect(PDF_THEME_COLORS.text).toBe('#0f172a');
+  expect(PDF_THEME_COLORS.headingBorder).toBe('#cbd5e1');
+  expect(hasDarkClass).not.toHaveBeenCalled();
 });

@@ -68,7 +68,7 @@ export function GroupTab() {
       {!isEditable && (
         <p
           role="status"
-          className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700"
+          className="flex items-center gap-2 rounded-lg bg-surface-muted px-3 py-2 text-sm text-text-muted"
         >
           <FontAwesomeIcon icon={faBoxArchive} />
           {ARCHIVED_READ_ONLY_MESSAGE}
@@ -76,7 +76,7 @@ export function GroupTab() {
       )}
 
       <section className="flex flex-col gap-2">
-        <label htmlFor="event-name" className="text-sm font-semibold text-slate-700">
+        <label htmlFor="event-name" className="text-sm font-semibold text-text">
           Event name
         </label>
         <input
@@ -94,17 +94,17 @@ export function GroupTab() {
               event.currentTarget.blur();
             }
           }}
-          className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+          className="min-h-11 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
         />
         {eventNameError && (
-          <p id="event-name-error" role="alert" className="text-sm text-red-600">
+          <p id="event-name-error" role="alert" className="text-sm text-danger-fg">
             {ERROR_MESSAGES[eventNameError]}
           </p>
         )}
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-slate-700">
+        <h2 className="text-sm font-semibold text-text">
           Participants ({participants.length})
         </h2>
 
@@ -122,12 +122,12 @@ export function GroupTab() {
             aria-invalid={participantError !== null}
             aria-describedby={participantError ? 'participant-error' : undefined}
             onChange={(event) => setParticipantDraft(event.target.value)}
-            className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+            className="min-h-11 flex-1 rounded-lg border border-border bg-surface px-3 text-base focus:border-primary focus:outline-none"
           />
           <button
             type="submit"
             aria-label="Add participant"
-            className="min-h-11 min-w-11 rounded-lg bg-slate-900 px-3 text-white"
+            className="min-h-11 min-w-11 rounded-lg bg-primary px-3 text-primary-contrast"
           >
             <FontAwesomeIcon icon={faUserPlus} />
           </button>
@@ -135,13 +135,13 @@ export function GroupTab() {
         )}
 
         {participantError && (
-          <p id="participant-error" role="alert" className="text-sm text-red-600">
+          <p id="participant-error" role="alert" className="text-sm text-danger-fg">
             {ERROR_MESSAGES[participantError]}
           </p>
         )}
 
         {participants.length === 0 ? (
-          <p className="text-sm text-slate-500">No participants yet.</p>
+          <p className="text-sm text-text-muted">No participants yet.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {participants.map((participant) => {
@@ -150,12 +150,12 @@ export function GroupTab() {
               return (
                 <li
                   key={participant.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-base">{participant.name}</p>
                     {isEditable && !removable && (
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-text-muted">
                         {PARTICIPANT_HAS_EXPENSES_MESSAGE}
                       </p>
                     )}
@@ -169,9 +169,9 @@ export function GroupTab() {
                     title={removable ? undefined : PARTICIPANT_HAS_EXPENSES_MESSAGE}
                     onClick={() => removeParticipant(participant.id)}
                     className={[
-                      'min-h-11 min-w-11 shrink-0 rounded-lg px-3 text-slate-600',
+                      'min-h-11 min-w-11 shrink-0 rounded-lg px-3 text-text-muted',
                       removable
-                        ? 'hover:bg-slate-100 hover:text-red-600'
+                        ? 'hover:bg-surface-muted hover:text-danger-fg'
                         : 'cursor-not-allowed opacity-40',
                     ].join(' ')}
                   >
@@ -185,7 +185,7 @@ export function GroupTab() {
         )}
 
         {!isGroupValid && (
-          <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="flex items-center gap-2 rounded-lg bg-warning-bg px-3 py-2 text-sm text-warning-fg">
             <FontAwesomeIcon icon={faCircleInfo} />
             {INVALID_GROUP_HINT}
           </p>

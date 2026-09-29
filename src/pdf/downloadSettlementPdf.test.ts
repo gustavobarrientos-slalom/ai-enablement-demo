@@ -56,4 +56,17 @@ describe('downloadSettlementPdf', () => {
     expect(pdfMock).toHaveBeenCalledOnce();
     expect(downloadName).toBe('anas-mexico-trip-settlement.pdf');
   });
+
+  it('downloads the fixed light PDF without reading the document theme class', async () => {
+    seedActiveEvent('Dark mode export');
+    useAppStore.getState().addParticipant('Ana');
+    useAppStore.getState().addParticipant('Luis');
+    document.documentElement.classList.add('dark');
+    const hasDarkClass = vi.spyOn(document.documentElement.classList, 'contains');
+
+    await downloadSettlementPdf(useAppStore.getState().events[0]!);
+
+    expect(pdfMock).toHaveBeenCalledOnce();
+    expect(hasDarkClass).not.toHaveBeenCalled();
+  });
 });

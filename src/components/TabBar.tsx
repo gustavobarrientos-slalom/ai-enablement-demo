@@ -24,7 +24,7 @@ export function TabBar({ activeTab, disabledTabs, onSelect }: TabBarProps) {
     <nav
       role="tablist"
       aria-label="Sections"
-      className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200 p-1"
+      className="grid grid-cols-3 gap-1 rounded-xl bg-surface-muted p-1"
     >
       {TABS.map((tab) => {
         const isDisabled = disabledTabs.includes(tab.id);
@@ -48,8 +48,8 @@ export function TabBar({ activeTab, disabledTabs, onSelect }: TabBarProps) {
             }}
             className={[
               'min-h-11 rounded-lg px-2 py-2 text-sm font-medium transition-colors',
-              isActive ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600',
-              isDisabled ? 'cursor-not-allowed opacity-40' : 'hover:text-slate-900',
+              isActive ? 'bg-surface text-text shadow-sm' : 'text-text-muted',
+              isDisabled ? 'cursor-not-allowed opacity-40' : 'hover:text-text',
             ].join(' ')}
           >
             {tab.label}
