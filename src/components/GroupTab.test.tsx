@@ -2,8 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GroupTab } from './GroupTab';
-import { resetAppStore, useAppStore } from '../store/useAppStore';
-import { makeExpense } from '../test/factories';
+import {
+  resetAppStore,
+  selectEventName,
+  selectParticipants,
+  useAppStore,
+} from '../store/useAppStore';
+import { makeExpense, seedActiveEvent, setActiveEventData } from '../test/factories';
 
 function addParticipants(...names: string[]) {
   for (const name of names) {
@@ -29,13 +34,14 @@ function listedNames(): string[] {
 beforeEach(() => {
   localStorage.clear();
   resetAppStore();
+  seedActiveEvent();
 });
 
 describe('event name', () => {
   it('shows the default name', () => {
     render(<GroupTab />);
 
-    expect(screen.getByLabelText('Event name')).toHaveValue('New Event');
+    expect(screen.getByLabelText('Event name')).toHaveValue('New event');
   });
 
   it('stores a valid trimmed name', async () => {
@@ -47,7 +53,7 @@ describe('event name', () => {
     await user.type(input, '  Trip to Oaxaca  ');
     await user.tab();
 
-    expect(useAppStore.getState().eventName).toBe('Trip to Oaxaca');
+    expect(selectEventName(useAppStore.getState())).toBe('Trip to Oaxaca');
   });
 
   it('shows an error and keeps the previous name when left empty', async () => {
@@ -59,8 +65,8 @@ describe('event name', () => {
     await user.tab();
 
     expect(screen.getByRole('alert')).toHaveTextContent('The event name is required');
-    expect(useAppStore.getState().eventName).toBe('New Event');
-    expect(input).toHaveValue('New Event');
+    expect(selectEventName(useAppStore.getState())).toBe('New event');
+    expect(input).toHaveValue('New event');
   });
 
   it('shows an error when it exceeds 60 characters', async () => {
@@ -149,8 +155,8 @@ describe('ordering and removal', () => {
 
   it('disables removal for someone who paid an expense', () => {
     addParticipants('Ana', 'Luis');
-    const [ana, luis] = useAppStore.getState().participants;
-    useAppStore.setState({
+    const [ana, luis] = selectParticipants(useAppStore.getState());
+    setActiveEventData({
       expenses: [makeExpense({ payerId: ana!.id })],
     });
     render(<GroupTab />);
@@ -165,8 +171,8 @@ describe('ordering and removal', () => {
 
   it('disables removal for a beneficiary', () => {
     addParticipants('Ana', 'Luis');
-    const [ana, luis] = useAppStore.getState().participants;
-    useAppStore.setState({
+    const [ana, luis] = selectParticipants(useAppStore.getState());
+    setActiveEventData({
       expenses: [makeExpense({ payerId: ana!.id, beneficiaryIds: [luis!.id] })],
     });
     render(<GroupTab />);
@@ -177,8 +183,8 @@ describe('ordering and removal', () => {
   it('leaves the list unchanged when removing someone with expenses', async () => {
     const user = userEvent.setup();
     addParticipants('Ana', 'Luis');
-    const [ana] = useAppStore.getState().participants;
-    useAppStore.setState({
+    const [ana] = selectParticipants(useAppStore.getState());
+    setActiveEventData({
       expenses: [makeExpense({ payerId: ana!.id })],
     });
     render(<GroupTab />);

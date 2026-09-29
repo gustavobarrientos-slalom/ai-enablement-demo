@@ -65,6 +65,30 @@ export interface GroupState {
   expenses: Expense[];
 }
 
+export type EventStatus = 'open' | 'archived';
+
+/**
+ * Named `SplitEvent` rather than `Event` so it never collides with the DOM
+ * `Event` type, which is globally available in this project.
+ */
+export interface SplitEvent {
+  id: string;
+  name: string;
+  status: EventStatus;
+  /** ISO 8601 timestamps; compared as dates, never rendered raw. */
+  createdAt: string;
+  updatedAt: string;
+  participants: Participant[];
+  expenses: Expense[];
+}
+
+export interface EventsState {
+  events: SplitEvent[];
+  lastActiveEventId: string | null;
+}
+
+export type EventFilter = 'all' | 'open' | 'archived';
+
 export type GroupError =
   | 'EMPTY_EVENT_NAME'
   | 'EVENT_NAME_TOO_LONG'
@@ -90,7 +114,9 @@ export type ExpenseError =
 
 export type SettlementError = 'NETS_DO_NOT_SUM';
 
-export type AppError = GroupError | ExpenseError | SettlementError;
+export type EventError = 'EVENT_NOT_FOUND' | 'EVENT_ARCHIVED';
+
+export type AppError = GroupError | ExpenseError | SettlementError | EventError;
 
 export type Result<T, E = AppError> =
   | { ok: true; value: T }

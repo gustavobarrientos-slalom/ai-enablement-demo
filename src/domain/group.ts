@@ -10,7 +10,7 @@ import {
   type Tip,
 } from './types';
 
-export const DEFAULT_EVENT_NAME = 'New Event';
+export const DEFAULT_EVENT_NAME = 'New event';
 export const EVENT_NAME_MAX_LENGTH = 60;
 export const PARTICIPANT_NAME_MAX_LENGTH = 30;
 export const MIN_PARTICIPANTS_FOR_VALID_GROUP = 2;

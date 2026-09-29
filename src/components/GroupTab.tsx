@@ -1,15 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  selectEventName,
+  selectExpenses,
+  selectIsActiveEventEditable,
   selectIsGroupValid,
+  selectParticipants,
   useAppStore,
 } from '../store/useAppStore';
 import {
+  ARCHIVED_READ_ONLY_MESSAGE,
   ERROR_MESSAGES,
   INVALID_GROUP_HINT,
   PARTICIPANT_HAS_EXPENSES_MESSAGE,
 } from '../ui/messages';
-import { faCircleInfo, faTrash, faUserPlus } from '../ui/icons';
+import { faBoxArchive, faCircleInfo, faTrash, faUserPlus } from '../ui/icons';
 import {
   EVENT_NAME_MAX_LENGTH,
   PARTICIPANT_NAME_MAX_LENGTH,
@@ -18,13 +23,14 @@ import {
 import type { AppError } from '../domain/types';
 
 export function GroupTab() {
-  const eventName = useAppStore((state) => state.eventName);
-  const participants = useAppStore((state) => state.participants);
+  const eventName = useAppStore(selectEventName) ?? '';
+  const participants = useAppStore(selectParticipants);
   const setEventName = useAppStore((state) => state.setEventName);
   const addParticipant = useAppStore((state) => state.addParticipant);
   const removeParticipant = useAppStore((state) => state.removeParticipant);
   const isGroupValid = useAppStore(selectIsGroupValid);
-  const expenses = useAppStore((state) => state.expenses);
+  const expenses = useAppStore(selectExpenses);
+  const isEditable = useAppStore(selectIsActiveEventEditable);
 
   const [eventNameDraft, setEventNameDraft] = useState(eventName);
   const [eventNameError, setEventNameError] = useState<AppError | null>(null);
@@ -59,6 +65,16 @@ export function GroupTab() {
 
   return (
     <div className="flex flex-col gap-6">
+      {!isEditable && (
+        <p
+          role="status"
+          className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700"
+        >
+          <FontAwesomeIcon icon={faBoxArchive} />
+          {ARCHIVED_READ_ONLY_MESSAGE}
+        </p>
+      )}
+
       <section className="flex flex-col gap-2">
         <label htmlFor="event-name" className="text-sm font-semibold text-slate-700">
           Event name
@@ -67,6 +83,7 @@ export function GroupTab() {
           id="event-name"
           type="text"
           value={eventNameDraft}
+          disabled={!isEditable}
           maxLength={EVENT_NAME_MAX_LENGTH + 1}
           aria-invalid={eventNameError !== null}
           aria-describedby={eventNameError ? 'event-name-error' : undefined}
@@ -91,6 +108,7 @@ export function GroupTab() {
           Participants ({participants.length})
         </h2>
 
+        {isEditable && (
         <form onSubmit={handleAddParticipant} className="flex gap-2" noValidate>
           <label htmlFor="participant-name" className="sr-only">
             Participant name
@@ -114,6 +132,7 @@ export function GroupTab() {
             <FontAwesomeIcon icon={faUserPlus} />
           </button>
         </form>
+        )}
 
         {participantError && (
           <p id="participant-error" role="alert" className="text-sm text-red-600">
@@ -126,7 +145,7 @@ export function GroupTab() {
         ) : (
           <ul className="flex flex-col gap-2">
             {participants.map((participant) => {
-              const removable = canRemoveParticipant(participant.id, expenses);
+              const removable = isEditable && canRemoveParticipant(participant.id, expenses);
 
               return (
                 <li
@@ -135,12 +154,13 @@ export function GroupTab() {
                 >
                   <div className="min-w-0">
                     <p className="truncate text-base">{participant.name}</p>
-                    {!removable && (
+                    {isEditable && !removable && (
                       <p className="text-xs text-slate-500">
                         {PARTICIPANT_HAS_EXPENSES_MESSAGE}
                       </p>
                     )}
                   </div>
+                  {isEditable && (
                   <button
                     type="button"
                     disabled={!removable}
@@ -157,6 +177,7 @@ export function GroupTab() {
                   >
                     <FontAwesomeIcon icon={faTrash} />
                   </button>
+                  )}
                 </li>
               );
             })}

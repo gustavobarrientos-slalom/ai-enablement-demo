@@ -1,4 +1,5 @@
-import type { Expense, Share, Tip } from '../domain/types';
+import type { Expense, Participant, Share, Tip } from '../domain/types';
+import { selectParticipants, useAppStore } from '../store/useAppStore';
 
 interface ExpenseOverrides {
   id?: string;
@@ -61,4 +62,59 @@ export function makeExpense(overrides: ExpenseOverrides): Expense {
     })),
     tip,
   };
+}
+
+/**
+ * Creates an event and makes it active, which every group and expense action
+ * now requires. Returns the new event id.
+ */
+export function seedActiveEvent(name?: string): string {
+  const id = useAppStore.getState().createEvent(name);
+
+  if (id === null) {
+    throw new Error('failed to seed an active event');
+  }
+
+  return id;
+}
+
+/** Seeds an active event and its participants in insertion order. */
+export function seedEventWithParticipants(names: readonly string[]): {
+  eventId: string;
+  participants: Participant[];
+} {
+  const eventId = seedActiveEvent();
+
+  for (const name of names) {
+    if (!useAppStore.getState().addParticipant(name)) {
+      throw new Error(`failed to seed participant ${name}`);
+    }
+  }
+
+  return { eventId, participants: selectParticipants(useAppStore.getState()) };
+}
+
+/** Replaces the active event's participants and expenses wholesale. */
+export function setActiveEventData(data: {
+  participants?: Participant[];
+  expenses?: Expense[];
+}): void {
+  const state = useAppStore.getState();
+  const activeId = state.activeEventId;
+
+  if (!activeId) {
+    throw new Error('no active event to write to');
+  }
+
+  useAppStore.setState({
+    events: state.events.map((event) =>
+      event.id === activeId
+        ? {
+            ...event,
+            participants: data.participants ?? event.participants,
+            expenses: data.expenses ?? event.expenses,
+          }
+        : event,
+    ),
+  });
 }

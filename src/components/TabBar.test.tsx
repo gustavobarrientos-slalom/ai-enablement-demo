@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../App';
 import { resetAppStore, useAppStore } from '../store/useAppStore';
+import { seedActiveEvent } from '../test/factories';
 
 function addParticipants(...names: string[]) {
   for (const name of names) {
@@ -13,6 +14,7 @@ function addParticipants(...names: string[]) {
 beforeEach(() => {
   localStorage.clear();
   resetAppStore();
+  seedActiveEvent();
 });
 
 describe('TabBar', () => {

@@ -1,24 +1,62 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  LEGACY_STORAGE_VERSION,
   STORAGE_KEY,
   STORAGE_VERSION,
   resetAppStore,
+  resetStoreClock,
+  selectActiveEvent,
   selectBalances,
   selectCanRemoveParticipant,
-  selectTransfers,
+  selectEventName,
+  selectExpenses,
   selectExpensesTotal,
   selectIsGroupValid,
+  selectParticipants,
+  selectTransfers,
+  selectVisibleEvents,
+  setStoreClock,
   useAppStore,
 } from './useAppStore';
 import { DEFAULT_EVENT_NAME } from '../domain/group';
-import { makeExpense } from '../test/factories';
+import { fixedClock } from '../lib/clock';
+import { makeExpense, seedActiveEvent, setActiveEventData } from '../test/factories';
+import type { SplitEvent } from '../domain/types';
 
 function state() {
   return useAppStore.getState();
 }
 
 function participantNames(): string[] {
-  return state().participants.map((participant) => participant.name);
+  return selectParticipants(state()).map((participant) => participant.name);
+}
+
+function activeEvent(): SplitEvent {
+  const event = selectActiveEvent(state());
+
+  if (!event) {
+    throw new Error('expected an active event');
+  }
+
+  return event;
+}
+
+function eventById(id: string): SplitEvent {
+  const event = state().events.find((candidate) => candidate.id === id);
+
+  if (!event) {
+    throw new Error(`expected event ${id}`);
+  }
+
+  return event;
+}
+
+/** Snapshots storage before resetting, because resetting also writes to it. */
+async function reload(): Promise<void> {
+  const stored = localStorage.getItem(STORAGE_KEY)!;
+  resetAppStore();
+  localStorage.setItem(STORAGE_KEY, stored);
+  await useAppStore.persist.rehydrate();
 }
 
 beforeEach(() => {
@@ -26,18 +64,318 @@ beforeEach(() => {
   resetAppStore();
 });
 
+afterEach(() => {
+  resetStoreClock();
+});
+
 describe('initial state', () => {
-  it('uses the default event name and has no participants', () => {
-    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
-    expect(state().participants).toEqual([]);
-    expect(state().expenses).toEqual([]);
+  it('starts with no events and no active event', () => {
+    expect(state().events).toEqual([]);
+    expect(state().activeEventId).toBeNull();
+    expect(state().lastActiveEventId).toBeNull();
+    expect(selectActiveEvent(state())).toBeNull();
+  });
+
+  it('exposes empty group data while no event is open', () => {
+    expect(selectParticipants(state())).toEqual([]);
+    expect(selectExpenses(state())).toEqual([]);
+    expect(selectEventName(state())).toBeNull();
+    expect(selectExpensesTotal(state())).toBe(0);
+  });
+});
+
+describe('createEvent', () => {
+  it('uses the default name when none is given and opens the event', () => {
+    const id = state().createEvent();
+
+    expect(id).not.toBeNull();
+    expect(activeEvent().name).toBe(DEFAULT_EVENT_NAME);
+    expect(state().activeEventId).toBe(id);
+    expect(state().lastActiveEventId).toBe(id);
+    expect(activeEvent().status).toBe('open');
+  });
+
+  it('trims a supplied name', () => {
+    state().createEvent('  Trip to Oaxaca  ');
+
+    expect(activeEvent().name).toBe('Trip to Oaxaca');
+  });
+
+  it('rejects an explicitly blank or overly long name', () => {
+    expect(state().createEvent('   ')).toBeNull();
+    expect(state().lastError).toBe('EMPTY_EVENT_NAME');
+
+    expect(state().createEvent('a'.repeat(61))).toBeNull();
+    expect(state().lastError).toBe('EVENT_NAME_TOO_LONG');
+
+    expect(state().events).toEqual([]);
+  });
+
+  it('sets both timestamps from one clock reading', () => {
+    setStoreClock(fixedClock('2026-01-01T00:00:00.000Z'));
+    state().createEvent('Trip');
+
+    expect(activeEvent().createdAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(activeEvent().updatedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('keeps each created event separate', () => {
+    const first = state().createEvent('First');
+    const second = state().createEvent('Second');
+
+    expect(state().events).toHaveLength(2);
+    expect(state().activeEventId).toBe(second);
+    expect(eventById(first!).name).toBe('First');
+  });
+});
+
+describe('opening and closing events', () => {
+  it('opens an existing event and records it as last active', () => {
+    const first = seedActiveEvent('First');
+    seedActiveEvent('Second');
+
+    expect(state().openEvent(first)).toBe(true);
+    expect(state().activeEventId).toBe(first);
+    expect(state().lastActiveEventId).toBe(first);
+  });
+
+  it('refuses to open an unknown event', () => {
+    expect(state().openEvent('missing')).toBe(false);
+    expect(state().lastError).toBe('EVENT_NOT_FOUND');
+    expect(state().activeEventId).toBeNull();
+  });
+
+  it('returns home without deleting or changing the event', () => {
+    const id = seedActiveEvent('Trip');
+    state().addParticipant('Ana');
+
+    state().closeEvent();
+
+    expect(state().activeEventId).toBeNull();
+    expect(state().events).toHaveLength(1);
+    expect(eventById(id).participants.map((p) => p.name)).toEqual(['Ana']);
+  });
+
+  it('keeps the last active identity after returning home so a reload reopens it', () => {
+    const id = seedActiveEvent('Trip');
+    state().closeEvent();
+
+    expect(state().lastActiveEventId).toBe(id);
+  });
+});
+
+describe('renameEvent', () => {
+  it('renames an open event and advances only its updatedAt', () => {
+    setStoreClock(fixedClock('2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'));
+    const id = seedActiveEvent('Trip');
+
+    expect(state().renameEvent(id, '  Weekend trip  ')).toBe(true);
+    expect(eventById(id).name).toBe('Weekend trip');
+    expect(eventById(id).createdAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(eventById(id).updatedAt).toBe('2026-01-02T00:00:00.000Z');
+  });
+
+  it('keeps the previous name when the new one is invalid', () => {
+    const id = seedActiveEvent('Trip');
+
+    expect(state().renameEvent(id, '   ')).toBe(false);
+    expect(state().lastError).toBe('EMPTY_EVENT_NAME');
+    expect(state().renameEvent(id, 'a'.repeat(61))).toBe(false);
+    expect(state().lastError).toBe('EVENT_NAME_TOO_LONG');
+    expect(eventById(id).name).toBe('Trip');
+  });
+
+  it('refuses to rename an unknown event', () => {
+    expect(state().renameEvent('missing', 'Nope')).toBe(false);
+    expect(state().lastError).toBe('EVENT_NOT_FOUND');
+  });
+});
+
+describe('archive lifecycle', () => {
+  it('archives and unarchives, advancing updatedAt', () => {
+    setStoreClock(
+      fixedClock(
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z',
+        '2026-01-03T00:00:00.000Z',
+      ),
+    );
+    const id = seedActiveEvent('Trip');
+
+    expect(state().archiveEvent(id)).toBe(true);
+    expect(eventById(id).status).toBe('archived');
+    expect(eventById(id).updatedAt).toBe('2026-01-02T00:00:00.000Z');
+
+    expect(state().unarchiveEvent(id)).toBe(true);
+    expect(eventById(id).status).toBe('open');
+    expect(eventById(id).updatedAt).toBe('2026-01-03T00:00:00.000Z');
+  });
+
+  it('blocks every group and expense mutation on an archived event', () => {
+    const id = seedActiveEvent('Trip');
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+
+    const [ana, luis] = selectParticipants(state());
+    state().addExpense({
+      concept: 'Dinner',
+      amount: '100.00',
+      payerId: ana!.id,
+      splitMode: 'equal',
+      beneficiaryIds: [ana!.id, luis!.id],
+      customAmounts: {},
+      tipMode: 'none',
+      tipValue: '',
+    });
+
+    const before = eventById(id);
+    state().archiveEvent(id);
+    const archived = eventById(id);
+
+    // Direct action calls must be refused, not just hidden in the UI.
+    expect(state().addParticipant('Carla')).toBe(false);
+    expect(state().lastError).toBe('EVENT_ARCHIVED');
+    expect(state().removeParticipant(ana!.id)).toBe(false);
+    expect(state().setEventName('Renamed')).toBe(false);
+    expect(
+      state().addExpense({
+        concept: 'Taxi',
+        amount: '50.00',
+        payerId: ana!.id,
+        splitMode: 'equal',
+        beneficiaryIds: [ana!.id],
+        customAmounts: {},
+        tipMode: 'none',
+        tipValue: '',
+      }),
+    ).toBe(false);
+    expect(state().removeExpense(before.expenses[0]!.id)).toBe(false);
+
+    const after = eventById(id);
+
+    expect(after.name).toBe(before.name);
+    expect(after.participants).toEqual(before.participants);
+    expect(after.expenses).toEqual(before.expenses);
+    expect(after.updatedAt).toBe(archived.updatedAt);
+  });
+
+  it('refuses to rename an archived event', () => {
+    const id = seedActiveEvent('Trip');
+    state().archiveEvent(id);
+
+    expect(state().renameEvent(id, 'Renamed')).toBe(false);
+    expect(state().lastError).toBe('EVENT_ARCHIVED');
+    expect(eventById(id).name).toBe('Trip');
+  });
+
+  it('keeps an archived event readable', () => {
+    const id = seedActiveEvent('Trip');
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+    state().archiveEvent(id);
+
+    expect(participantNames()).toEqual(['Ana', 'Luis']);
+    expect(selectIsGroupValid(state())).toBe(true);
+  });
+});
+
+describe('deleteEvent', () => {
+  it('removes the event and its data, leaving others untouched', () => {
+    const first = seedActiveEvent('First');
+    state().addParticipant('Ana');
+    const second = seedActiveEvent('Second');
+    state().addParticipant('Luis');
+
+    state().deleteEvent(first);
+
+    expect(state().events).toHaveLength(1);
+    expect(eventById(second).participants.map((p) => p.name)).toEqual(['Luis']);
+  });
+
+  it('clears the selection when the deleted event was open', () => {
+    const id = seedActiveEvent('Trip');
+
+    state().deleteEvent(id);
+
+    expect(state().activeEventId).toBeNull();
+    expect(state().lastActiveEventId).toBeNull();
+  });
+
+  it('deletes an archived event too', () => {
+    const id = seedActiveEvent('Trip');
+    state().archiveEvent(id);
+
+    state().deleteEvent(id);
+
+    expect(state().events).toEqual([]);
+  });
+});
+
+describe('event list ordering and filtering', () => {
+  it('lists events by updatedAt descending', () => {
+    setStoreClock(
+      fixedClock(
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z',
+        '2026-01-03T00:00:00.000Z',
+      ),
+    );
+    const first = seedActiveEvent('First');
+    const second = seedActiveEvent('Second');
+    state().renameEvent(first, 'First edited');
+
+    expect(selectVisibleEvents(state()).map((event) => event.id)).toEqual([
+      first,
+      second,
+    ]);
+  });
+
+  it('filters by status without changing the events', () => {
+    const open = seedActiveEvent('Open one');
+    const archived = seedActiveEvent('Archived one');
+    state().archiveEvent(archived);
+
+    state().setEventFilter('open');
+    expect(selectVisibleEvents(state()).map((e) => e.id)).toEqual([open]);
+
+    state().setEventFilter('archived');
+    expect(selectVisibleEvents(state()).map((e) => e.id)).toEqual([archived]);
+
+    state().setEventFilter('all');
+    expect(selectVisibleEvents(state())).toHaveLength(2);
+    expect(state().events).toHaveLength(2);
+  });
+});
+
+describe('group actions require an active event', () => {
+  it('refuses mutations while the Events home is showing', () => {
+    expect(state().addParticipant('Ana')).toBe(false);
+    expect(state().lastError).toBe('EVENT_NOT_FOUND');
+    expect(state().setEventName('Trip')).toBe(false);
+    expect(
+      state().addExpense({
+        concept: 'Dinner',
+        amount: '10.00',
+        payerId: 'p1',
+        splitMode: 'equal',
+        beneficiaryIds: ['p1'],
+        customAmounts: {},
+        tipMode: 'none',
+        tipValue: '',
+      }),
+    ).toBe(false);
+    expect(state().events).toEqual([]);
   });
 });
 
 describe('setEventName', () => {
+  beforeEach(() => {
+    seedActiveEvent();
+  });
+
   it('stores a valid trimmed name', () => {
     expect(state().setEventName('  Trip to Oaxaca  ')).toBe(true);
-    expect(state().eventName).toBe('Trip to Oaxaca');
+    expect(selectEventName(state())).toBe('Trip to Oaxaca');
     expect(state().lastError).toBeNull();
   });
 
@@ -45,7 +383,7 @@ describe('setEventName', () => {
     state().setEventName('Trip to Oaxaca');
 
     expect(state().setEventName('   ')).toBe(false);
-    expect(state().eventName).toBe('Trip to Oaxaca');
+    expect(selectEventName(state())).toBe('Trip to Oaxaca');
     expect(state().lastError).toBe('EMPTY_EVENT_NAME');
   });
 
@@ -53,16 +391,29 @@ describe('setEventName', () => {
     expect(state().setEventName('a'.repeat(61))).toBe(false);
     expect(state().lastError).toBe('EVENT_NAME_TOO_LONG');
   });
+
+  it('renames only the active event', () => {
+    const other = seedActiveEvent('Other');
+    const first = state().events[0]!.id;
+    state().openEvent(first);
+    state().setEventName('Renamed');
+
+    expect(eventById(other).name).toBe('Other');
+  });
 });
 
 describe('addParticipant', () => {
+  beforeEach(() => {
+    seedActiveEvent();
+  });
+
   it('adds participants in insertion order with unique ids', () => {
     state().addParticipant('Ana');
     state().addParticipant('Luis');
     state().addParticipant('Sofia');
 
     expect(participantNames()).toEqual(['Ana', 'Luis', 'Sofia']);
-    expect(new Set(state().participants.map((p) => p.id)).size).toBe(3);
+    expect(new Set(selectParticipants(state()).map((p) => p.id)).size).toBe(3);
   });
 
   it('rejects duplicates case-insensitively', () => {
@@ -80,7 +431,7 @@ describe('addParticipant', () => {
     expect(state().addParticipant('a'.repeat(31))).toBe(false);
     expect(state().lastError).toBe('NAME_TOO_LONG');
 
-    expect(state().participants).toEqual([]);
+    expect(selectParticipants(state())).toEqual([]);
   });
 
   it('clears the error after a successful action', () => {
@@ -93,10 +444,14 @@ describe('addParticipant', () => {
 });
 
 describe('removeParticipant', () => {
+  beforeEach(() => {
+    seedActiveEvent();
+  });
+
   it('removes a participant without expenses', () => {
     state().addParticipant('Ana');
     state().addParticipant('Luis');
-    const [ana] = state().participants;
+    const [ana] = selectParticipants(state());
 
     expect(state().removeParticipant(ana!.id)).toBe(true);
     expect(participantNames()).toEqual(['Luis']);
@@ -105,8 +460,8 @@ describe('removeParticipant', () => {
   it('blocks removing someone with associated expenses', () => {
     state().addParticipant('Ana');
     state().addParticipant('Luis');
-    const [ana, luis] = state().participants;
-    useAppStore.setState({
+    const [ana, luis] = selectParticipants(state());
+    setActiveEventData({
       expenses: [makeExpense({ payerId: ana!.id, beneficiaryIds: [luis!.id] })],
     });
 
@@ -118,6 +473,10 @@ describe('removeParticipant', () => {
 });
 
 describe('derived selectors', () => {
+  beforeEach(() => {
+    seedActiveEvent();
+  });
+
   it('computes group validity without storing it', () => {
     expect(selectIsGroupValid(state())).toBe(false);
 
@@ -127,7 +486,7 @@ describe('derived selectors', () => {
     state().addParticipant('Luis');
     expect(selectIsGroupValid(state())).toBe(true);
 
-    const [ana] = state().participants;
+    const [ana] = selectParticipants(state());
     state().removeParticipant(ana!.id);
     expect(selectIsGroupValid(state())).toBe(false);
 
@@ -136,95 +495,103 @@ describe('derived selectors', () => {
 
   it('reports whether a participant can be removed', () => {
     state().addParticipant('Ana');
-    const [ana] = state().participants;
+    const [ana] = selectParticipants(state());
     expect(selectCanRemoveParticipant(state())(ana!.id)).toBe(true);
 
-    useAppStore.setState({
-      expenses: [makeExpense({ payerId: ana!.id })],
-    });
+    setActiveEventData({ expenses: [makeExpense({ payerId: ana!.id })] });
     expect(selectCanRemoveParticipant(state())(ana!.id)).toBe(false);
   });
 });
 
-describe('persistence', () => {
-  it('saves state to localStorage under a versioned key', async () => {
-    state().setEventName('Trip to Oaxaca');
+describe('timestamps and isolation', () => {
+  it('advances only the edited event updatedAt', () => {
+    setStoreClock(
+      fixedClock(
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z',
+        '2026-01-03T00:00:00.000Z',
+      ),
+    );
+    const first = seedActiveEvent('First');
+    const second = seedActiveEvent('Second');
+
+    const secondBefore = eventById(second);
+
+    state().openEvent(first);
     state().addParticipant('Ana');
 
-    const raw = localStorage.getItem(STORAGE_KEY);
-    expect(raw).not.toBeNull();
-
-    const stored = JSON.parse(raw!);
-    expect(stored.version).toBe(STORAGE_VERSION);
-    expect(stored.state.eventName).toBe('Trip to Oaxaca');
-    expect(stored.state.participants).toHaveLength(1);
-    expect(stored.state.expenses).toEqual([]);
+    expect(eventById(first).updatedAt).toBe('2026-01-03T00:00:00.000Z');
+    expect(eventById(first).createdAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(eventById(second).updatedAt).toBe(secondBefore.updatedAt);
+    expect(eventById(second).createdAt).toBe(secondBefore.createdAt);
   });
 
-  it('restores state and order on reload', async () => {
-    state().setEventName('Trip to Oaxaca');
+  it('leaves timestamps untouched when an action is rejected', () => {
+    setStoreClock(fixedClock('2026-01-01T00:00:00.000Z', '2026-01-09T00:00:00.000Z'));
+    const id = seedActiveEvent('Trip');
+
+    state().addParticipant('   ');
+
+    expect(eventById(id).updatedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('never mixes participants, expenses, totals or settlement between events', () => {
+    const a = seedActiveEvent('A');
     state().addParticipant('Ana');
+    state().addParticipant('Beto');
+    const [ana, beto] = selectParticipants(state());
+    state().addExpense({
+      concept: 'Dinner',
+      amount: '100.00',
+      payerId: ana!.id,
+      splitMode: 'equal',
+      beneficiaryIds: [ana!.id, beto!.id],
+      customAmounts: {},
+      tipMode: 'none',
+      tipValue: '',
+    });
+
+    const b = seedActiveEvent('B');
     state().addParticipant('Luis');
-    state().addParticipant('Sofia');
+    state().addParticipant('Carla');
+    const [luis, carla] = selectParticipants(state());
+    state().addExpense({
+      concept: 'Uber',
+      amount: '25.00',
+      payerId: luis!.id,
+      splitMode: 'equal',
+      beneficiaryIds: [luis!.id, carla!.id],
+      customAmounts: {},
+      tipMode: 'none',
+      tipValue: '',
+    });
 
-    const stored = localStorage.getItem(STORAGE_KEY)!;
-    resetAppStore();
-    expect(state().participants).toEqual([]);
+    state().openEvent(a);
+    expect(participantNames()).toEqual(['Ana', 'Beto']);
+    expect(selectExpenses(state()).map((e) => e.concept)).toEqual(['Dinner']);
+    expect(selectExpensesTotal(state())).toBe(10000);
+    expect(selectBalances(state()).map((balance) => balance.netCents)).toEqual([
+      5000, -5000,
+    ]);
 
-    // Simulates a reload: storage still holds what was saved before.
-    localStorage.setItem(STORAGE_KEY, stored);
-    await useAppStore.persist.rehydrate();
-
-    expect(state().eventName).toBe('Trip to Oaxaca');
-    expect(participantNames()).toEqual(['Ana', 'Luis', 'Sofia']);
-  });
-
-  it('discards corrupted data without crashing', async () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ version: 1, state: { eventName: 42, participants: 'nope' } }),
-    );
-
-    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
-    expect(state().participants).toEqual([]);
-  });
-
-  it('discards invalid JSON without crashing', async () => {
-    localStorage.setItem(STORAGE_KEY, '{ this is not json');
-
-    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
-    expect(state().participants).toEqual([]);
-  });
-
-  it('discards an unknown version without crashing', async () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        version: 99,
-        state: { eventName: 'Old', participants: [{ id: '1', name: 'Ana' }] },
-      }),
-    );
-
-    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
-    expect(state().participants).toEqual([]);
-  });
-
-  it('keeps store actions after rehydrating', async () => {
-    await useAppStore.persist.rehydrate();
-    expect(typeof state().addParticipant).toBe('function');
+    state().openEvent(b);
+    expect(participantNames()).toEqual(['Luis', 'Carla']);
+    expect(selectExpenses(state()).map((e) => e.concept)).toEqual(['Uber']);
+    expect(selectExpensesTotal(state())).toBe(2500);
+    expect(selectBalances(state()).map((balance) => balance.netCents)).toEqual([
+      1250, -1250,
+    ]);
   });
 });
 
 describe('expenses', () => {
   function seedParticipants(): [string, string, string] {
+    seedActiveEvent();
     state().addParticipant('Ana');
     state().addParticipant('Luis');
     state().addParticipant('Carla');
 
-    const [ana, luis, carla] = state().participants;
+    const [ana, luis, carla] = selectParticipants(state());
 
     return [ana!.id, luis!.id, carla!.id];
   }
@@ -246,9 +613,9 @@ describe('expenses', () => {
     const [ana, luis, carla] = seedParticipants();
 
     expect(state().addExpense(equalDraft(ana, [ana, luis, carla]))).toBe(true);
-    expect(state().expenses).toHaveLength(1);
+    expect(selectExpenses(state())).toHaveLength(1);
 
-    const expense = state().expenses[0]!;
+    const expense = selectExpenses(state())[0]!;
     expect(expense.amountCents).toBe(25000);
     expect(expense.shares.map((share) => share.amountCents)).toEqual([8334, 8333, 8333]);
     expect(state().lastError).toBeNull();
@@ -258,7 +625,7 @@ describe('expenses', () => {
     const [ana, luis] = seedParticipants();
 
     expect(state().addExpense(equalDraft(ana, [ana, luis], '0'))).toBe(false);
-    expect(state().expenses).toEqual([]);
+    expect(selectExpenses(state())).toEqual([]);
     expect(state().lastError).toBe('AMOUNT_NOT_POSITIVE');
   });
 
@@ -266,7 +633,7 @@ describe('expenses', () => {
     const [ana, luis] = seedParticipants();
     state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
 
-    const id = state().expenses[0]!.id;
+    const id = selectExpenses(state())[0]!.id;
 
     expect(
       state().updateExpense(id, {
@@ -275,9 +642,9 @@ describe('expenses', () => {
       }),
     ).toBe(true);
 
-    expect(state().expenses).toHaveLength(1);
+    expect(selectExpenses(state())).toHaveLength(1);
 
-    const expense = state().expenses[0]!;
+    const expense = selectExpenses(state())[0]!;
     expect(expense.id).toBe(id);
     expect(expense.concept).toBe('Taxi');
     expect(expense.amountCents).toBe(5000);
@@ -285,13 +652,13 @@ describe('expenses', () => {
   });
 
   it('leaves the expense untouched when an edit is invalid', () => {
-    const [ana, luis] = seedParticipants();
-    state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
+    const [ana] = seedParticipants();
+    state().addExpense(equalDraft(ana, [ana], '100.00'));
 
-    const before = state().expenses[0]!;
+    const before = selectExpenses(state())[0]!;
 
     expect(state().updateExpense(before.id, equalDraft(ana, [], '100.00'))).toBe(false);
-    expect(state().expenses[0]).toEqual(before);
+    expect(selectExpenses(state())[0]).toEqual(before);
     expect(state().lastError).toBe('NO_BENEFICIARIES');
   });
 
@@ -300,7 +667,7 @@ describe('expenses', () => {
     state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
 
     expect(state().updateExpense('missing', equalDraft(ana, [ana, luis]))).toBe(false);
-    expect(state().expenses).toHaveLength(1);
+    expect(selectExpenses(state())).toHaveLength(1);
   });
 
   it('removes an expense and updates the total', () => {
@@ -310,10 +677,10 @@ describe('expenses', () => {
 
     expect(selectExpensesTotal(state())).toBe(14000);
 
-    const id = state().expenses[0]!.id;
+    const id = selectExpenses(state())[0]!.id;
     state().removeExpense(id);
 
-    expect(state().expenses).toHaveLength(1);
+    expect(selectExpenses(state())).toHaveLength(1);
     expect(selectExpensesTotal(state())).toBe(4000);
   });
 
@@ -336,19 +703,147 @@ describe('expenses', () => {
   });
 });
 
-describe('expense persistence', () => {
-  async function reload(): Promise<void> {
-    const stored = localStorage.getItem(STORAGE_KEY)!;
+describe('persistence', () => {
+  it('saves the event collection under the versioned key', () => {
+    seedActiveEvent('Trip to Oaxaca');
+    state().addParticipant('Ana');
+
+    const raw = localStorage.getItem(STORAGE_KEY);
+    expect(raw).not.toBeNull();
+
+    const stored = JSON.parse(raw!);
+    expect(stored.version).toBe(STORAGE_VERSION);
+    expect(Object.keys(stored.state).sort()).toEqual(['events', 'lastActiveEventId']);
+    expect(stored.state.events).toHaveLength(1);
+    expect(stored.state.events[0].name).toBe('Trip to Oaxaca');
+    expect(stored.state.events[0].participants).toHaveLength(1);
+  });
+
+  it('restores events and reopens the last active one', async () => {
+    seedActiveEvent('First');
+    state().addParticipant('Ana');
+    const second = seedActiveEvent('Second');
+    state().addParticipant('Luis');
+
+    await reload();
+
+    expect(state().events).toHaveLength(2);
+    expect(state().activeEventId).toBe(second);
+    expect(selectEventName(state())).toBe('Second');
+    expect(participantNames()).toEqual(['Luis']);
+  });
+
+  it('keeps each event participants separate across a reload', async () => {
+    const first = seedActiveEvent('First');
+    state().addParticipant('Ana');
+    state().addParticipant('Beto');
+    seedActiveEvent('Second');
+    state().addParticipant('Luis');
+
+    await reload();
+
+    expect(eventById(first).participants.map((p) => p.name)).toEqual(['Ana', 'Beto']);
+    expect(participantNames()).toEqual(['Luis']);
+  });
+
+  it('shows the Events home when the last active event no longer exists', async () => {
+    seedActiveEvent('First');
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.state.lastActiveEventId = 'missing';
+
     resetAppStore();
-    localStorage.setItem(STORAGE_KEY, stored);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     await useAppStore.persist.rehydrate();
-  }
+
+    expect(state().events).toHaveLength(1);
+    expect(state().activeEventId).toBeNull();
+    expect(selectActiveEvent(state())).toBeNull();
+  });
+
+  it('discards corrupted data without crashing', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ version: STORAGE_VERSION, state: { events: 'nope' } }),
+    );
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().events).toEqual([]);
+    expect(state().activeEventId).toBeNull();
+  });
+
+  it('discards invalid JSON without crashing', async () => {
+    localStorage.setItem(STORAGE_KEY, '{ this is not json');
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().events).toEqual([]);
+  });
+
+  it('discards an unknown version without crashing', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 99,
+        state: { events: [{ id: 'e1', name: 'Old' }], lastActiveEventId: 'e1' },
+      }),
+    );
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().events).toEqual([]);
+  });
+
+  it('discards an event with a malformed timestamp', async () => {
+    seedActiveEvent('Trip');
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.state.events[0].updatedAt = 'not-a-date';
+
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+
+    expect(state().events).toEqual([]);
+  });
+
+  it('discards duplicate event ids', async () => {
+    seedActiveEvent('Trip');
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.state.events.push({ ...stored.state.events[0] });
+
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+
+    expect(state().events).toEqual([]);
+  });
+
+  it('discards an expense referencing a participant outside its event', async () => {
+    seedActiveEvent('Trip');
+    state().addParticipant('Ana');
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.state.events[0].expenses = [
+      {
+        id: 'x1',
+        concept: 'Dinner',
+        amountCents: 1000,
+        payerId: 'ghost',
+        splitMode: 'equal',
+        shares: [{ participantId: 'ghost', amountCents: 1000 }],
+        tip: null,
+      },
+    ];
+
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+
+    expect(state().events).toEqual([]);
+  });
 
   it('restores expenses in order across a reload', async () => {
+    seedActiveEvent('Trip');
     state().addParticipant('Ana');
     state().addParticipant('Luis');
 
-    const [ana, luis] = state().participants;
+    const [ana, luis] = selectParticipants(state());
 
     for (const concept of ['First', 'Second', 'Third']) {
       state().addExpense({
@@ -358,14 +853,14 @@ describe('expense persistence', () => {
         splitMode: 'equal',
         beneficiaryIds: [ana!.id, luis!.id],
         customAmounts: {},
-        tipMode: 'none' as const,
+        tipMode: 'none',
         tipValue: '',
       });
     }
 
     await reload();
 
-    expect(state().expenses.map((expense) => expense.concept)).toEqual([
+    expect(selectExpenses(state()).map((expense) => expense.concept)).toEqual([
       'First',
       'Second',
       'Third',
@@ -373,81 +868,172 @@ describe('expense persistence', () => {
     expect(selectExpensesTotal(state())).toBe(9000);
   });
 
-  it('discards expenses whose shares do not sum to the amount', async () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        version: STORAGE_VERSION,
-        state: {
-          eventName: 'Trip',
-          participants: [{ id: '1', name: 'Ana' }],
-          expenses: [
-            {
-              id: 'e1',
-              concept: 'Dinner',
-              amountCents: 10000,
-              payerId: '1',
-              splitMode: 'equal',
-              shares: [{ participantId: '1', amountCents: 9999 }],
-            },
-          ],
-        },
-      }),
-    );
+  it('keeps store actions after rehydrating', async () => {
+    await useAppStore.persist.rehydrate();
+    expect(typeof state().addParticipant).toBe('function');
+  });
+});
 
-    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
-    expect(state().expenses).toEqual([]);
+describe('legacy single event migration', () => {
+  /** A literal single-group payload, written by hand so it cannot drift. */
+  const LEGACY_PAYLOAD = {
+    version: LEGACY_STORAGE_VERSION,
+    state: {
+      eventName: 'Trip to Oaxaca',
+      participants: [
+        { id: 'p1', name: 'Ana' },
+        { id: 'p2', name: 'Luis' },
+      ],
+      expenses: [
+        {
+          id: 'e1',
+          concept: 'Dinner',
+          amountCents: 10000,
+          payerId: 'p1',
+          splitMode: 'equal',
+          shares: [
+            { participantId: 'p1', amountCents: 5000 },
+            { participantId: 'p2', amountCents: 5000 },
+          ],
+          tip: { kind: 'percent', percent: 10, amountCents: 1000 },
+        },
+      ],
+    },
+  };
+
+  /** A mutable JSON copy, so tests can corrupt or strip individual fields. */
+  function cloneLegacyPayload(): {
+    version: number;
+    state: { expenses: Array<Record<string, unknown>> };
+  } {
+    return structuredClone(LEGACY_PAYLOAD) as unknown as {
+      version: number;
+      state: { expenses: Array<Record<string, unknown>> };
+    };
+  }
+
+  it('migrates a nonempty legacy event into the first active event', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(LEGACY_PAYLOAD));
+
+    await useAppStore.persist.rehydrate();
+
+    expect(state().events).toHaveLength(1);
+    expect(selectEventName(state())).toBe('Trip to Oaxaca');
+    expect(participantNames()).toEqual(['Ana', 'Luis']);
+    expect(selectExpenses(state())).toHaveLength(1);
+    expect(activeEvent().status).toBe('open');
+    expect(state().activeEventId).toBe(activeEvent().id);
   });
 
-  it('discards expenses referencing an unknown participant', async () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        version: STORAGE_VERSION,
-        state: {
-          eventName: 'Trip',
-          participants: [{ id: '1', name: 'Ana' }],
-          expenses: [
-            {
-              id: 'e1',
-              concept: 'Dinner',
-              amountCents: 10000,
-              payerId: '1',
-              splitMode: 'equal',
-              shares: [{ participantId: 'ghost', amountCents: 10000 }],
-            },
-          ],
-        },
-      }),
-    );
+  it('preserves shares, amounts and the tip through migration', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(LEGACY_PAYLOAD));
 
-    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().expenses).toEqual([]);
-    expect(state().participants).toEqual([]);
+    await useAppStore.persist.rehydrate();
+
+    const expense = selectExpenses(state())[0]!;
+
+    expect(expense.amountCents).toBe(10000);
+    expect(expense.shares.map((share) => share.amountCents)).toEqual([5000, 5000]);
+    expect(expense.tip).toEqual({ kind: 'percent', percent: 10, amountCents: 1000 });
+    // 100.00 base plus the 10.00 tip.
+    expect(selectExpensesTotal(state())).toBe(11000);
   });
 
-  it('discards a version 1 payload instead of crashing', async () => {
+  it('migrates a legacy expense that predates tips', async () => {
+    const payload = cloneLegacyPayload();
+
+    delete payload.state.expenses[0]!.tip;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+
+    await useAppStore.persist.rehydrate();
+
+    expect(selectExpenses(state())[0]!.tip).toBeNull();
+    expect(selectExpensesTotal(state())).toBe(10000);
+  });
+
+  it('discards an untouched legacy event and shows an empty home', async () => {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        version: 1,
-        state: { eventName: 'Old trip', participants: [{ id: '1', name: 'Ana' }] },
+        version: LEGACY_STORAGE_VERSION,
+        state: { eventName: DEFAULT_EVENT_NAME, participants: [], expenses: [] },
+      }),
+    );
+
+    await useAppStore.persist.rehydrate();
+
+    expect(state().events).toEqual([]);
+    expect(state().activeEventId).toBeNull();
+  });
+
+  it('discards an empty legacy event even with a custom name', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: LEGACY_STORAGE_VERSION,
+        state: { eventName: 'Named but unused', participants: [], expenses: [] },
+      }),
+    );
+
+    await useAppStore.persist.rehydrate();
+
+    expect(state().events).toEqual([]);
+  });
+
+  it('discards a malformed legacy payload rather than inventing an event', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: LEGACY_STORAGE_VERSION,
+        state: { eventName: 42, participants: 'nope' },
       }),
     );
 
     await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
-    expect(state().expenses).toEqual([]);
+    expect(state().events).toEqual([]);
+  });
+
+  it('discards a legacy expense whose shares do not sum to the amount', async () => {
+    const payload = cloneLegacyPayload();
+
+    payload.state.expenses[0]!.shares = [{ participantId: 'p1', amountCents: 9999 }];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().events).toEqual([]);
+  });
+
+  it('discards a legacy payload with an invalid tip', async () => {
+    const payload = cloneLegacyPayload();
+
+    payload.state.expenses[0]!.tip = { kind: 'fixed', amountCents: -500 };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().events).toEqual([]);
+  });
+
+  it('persists the migrated collection under the new version', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(LEGACY_PAYLOAD));
+
+    await useAppStore.persist.rehydrate();
+    state().addParticipant('Carla');
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+
+    expect(stored.version).toBe(STORAGE_VERSION);
+    expect(stored.state.events).toHaveLength(1);
+    expect(stored.state.eventName).toBeUndefined();
   });
 });
 
 describe('settlement selectors', () => {
   function seed(): [string, string] {
+    seedActiveEvent();
     state().addParticipant('Ana');
     state().addParticipant('Luis');
 
-    const [ana, luis] = state().participants;
+    const [ana, luis] = selectParticipants(state());
 
     return [ana!.id, luis!.id];
   }
@@ -481,9 +1067,7 @@ describe('settlement selectors', () => {
   it('produces no transfers when everyone is even', () => {
     seed();
 
-    const result = selectTransfers(state());
-
-    expect(result).toEqual({ ok: true, value: [] });
+    expect(selectTransfers(state())).toEqual({ ok: true, value: [] });
   });
 
   it('recalculates balances after adding an expense', () => {
@@ -498,9 +1082,7 @@ describe('settlement selectors', () => {
     const [ana, luis] = seed();
     state().addExpense(dinner(ana, [ana, luis], '100.00'));
 
-    const result = selectTransfers(state());
-
-    expect(result).toEqual({
+    expect(selectTransfers(state())).toEqual({
       ok: true,
       value: [{ fromId: luis, toId: ana, amountCents: 5000 }],
     });
@@ -510,7 +1092,7 @@ describe('settlement selectors', () => {
     const [ana, luis] = seed();
     state().addExpense(dinner(ana, [ana, luis], '100.00'));
 
-    const id = state().expenses[0]!.id;
+    const id = selectExpenses(state())[0]!.id;
     state().updateExpense(id, dinner(ana, [ana, luis], '40.00'));
 
     expect(netFor(ana)).toBe(2000);
@@ -524,7 +1106,7 @@ describe('settlement selectors', () => {
   it('returns to settled up after deleting the only expense', () => {
     const [ana, luis] = seed();
     state().addExpense(dinner(ana, [ana, luis], '100.00'));
-    state().removeExpense(state().expenses[0]!.id);
+    state().removeExpense(selectExpenses(state())[0]!.id);
 
     expect(netFor(ana)).toBe(0);
     expect(netFor(luis)).toBe(0);
@@ -555,7 +1137,7 @@ describe('settlement selectors', () => {
     expect(raw).not.toContain('fromId');
 
     const stored = JSON.parse(raw);
-    expect(Object.keys(stored.state)).toEqual(['eventName', 'participants', 'expenses']);
+    expect(Object.keys(stored.state).sort()).toEqual(['events', 'lastActiveEventId']);
   });
 
   it('recomputes the same result after a reload', async () => {
@@ -564,127 +1146,27 @@ describe('settlement selectors', () => {
 
     const before = selectTransfers(state());
 
-    const stored = localStorage.getItem(STORAGE_KEY)!;
-    resetAppStore();
-    localStorage.setItem(STORAGE_KEY, stored);
-    await useAppStore.persist.rehydrate();
+    await reload();
 
     expect(selectTransfers(state())).toEqual(before);
     expect(netFor(ana)).toBe(5000);
     expect(netFor(luis)).toBe(-5000);
   });
-});
 
-describe('tip persistence', () => {
-  /** A literal version 2 payload, written by hand so it cannot drift. */
-  const V2_PAYLOAD = {
-    version: 2,
-    state: {
-      eventName: 'Trip to Oaxaca',
-      participants: [
-        { id: 'p1', name: 'Ana' },
-        { id: 'p2', name: 'Luis' },
-      ],
-      expenses: [
-        {
-          id: 'e1',
-          concept: 'Dinner',
-          amountCents: 10000,
-          payerId: 'p1',
-          splitMode: 'equal',
-          shares: [
-            { participantId: 'p1', amountCents: 5000 },
-            { participantId: 'p2', amountCents: 5000 },
-          ],
-        },
-      ],
-    },
-  };
+  it('settles each event independently', () => {
+    const [ana, luis] = seed();
+    state().addExpense(dinner(ana, [ana, luis], '100.00'));
 
-  it('migrates version 2 expenses forward with no tip', async () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(V2_PAYLOAD));
+    seedActiveEvent('Other');
+    state().addParticipant('Carla');
+    state().addParticipant('Diana');
 
-    await useAppStore.persist.rehydrate();
+    expect(selectTransfers(state())).toEqual({ ok: true, value: [] });
 
-    expect(state().eventName).toBe('Trip to Oaxaca');
-    expect(state().expenses).toHaveLength(1);
-    expect(state().expenses[0]!.tip).toBeNull();
-    expect(selectExpensesTotal(state())).toBe(10000);
-  });
-
-  it('still discards an unknown version', async () => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ ...V2_PAYLOAD, version: 99 }),
-    );
-
-    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().expenses).toEqual([]);
-    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
-  });
-
-  it('discards a malformed tip rather than loading an inconsistent expense', async () => {
-    const withBadTip = structuredClone(V2_PAYLOAD) as typeof V2_PAYLOAD & {
-      version: number;
-      state: { expenses: Array<Record<string, unknown>> };
-    };
-
-    withBadTip.version = 3;
-    withBadTip.state.expenses[0]!.tip = { kind: 'fixed', amountCents: -500 };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(withBadTip));
-
-    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().expenses).toEqual([]);
-  });
-
-  it('discards a percent tip with a non integer percentage', async () => {
-    const withBadTip = structuredClone(V2_PAYLOAD) as typeof V2_PAYLOAD & {
-      version: number;
-      state: { expenses: Array<Record<string, unknown>> };
-    };
-
-    withBadTip.version = 3;
-    withBadTip.state.expenses[0]!.tip = {
-      kind: 'percent',
-      percent: 12.5,
-      amountCents: 1250,
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(withBadTip));
-
-    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
-    expect(state().expenses).toEqual([]);
-  });
-
-  it('round trips a tipped expense through storage', async () => {
-    state().addParticipant('Ana');
-    state().addParticipant('Luis');
-
-    const [anaP, luisP] = state().participants;
-    const ana = anaP!.id;
-    const luis = luisP!.id;
-
-    state().addExpense({
-      concept: 'Dinner',
-      amount: '250.00',
-      payerId: ana,
-      splitMode: 'equal',
-      beneficiaryIds: [ana, luis],
-      customAmounts: {},
-      tipMode: 'percent',
-      tipValue: '10',
+    state().openEvent(eventById(state().events[0]!.id).id);
+    expect(selectTransfers(state())).toEqual({
+      ok: true,
+      value: [{ fromId: luis, toId: ana, amountCents: 5000 }],
     });
-
-    const stored = localStorage.getItem(STORAGE_KEY)!;
-
-    resetAppStore();
-    localStorage.setItem(STORAGE_KEY, stored);
-    await useAppStore.persist.rehydrate();
-
-    expect(state().expenses[0]!.tip).toEqual({
-      kind: 'percent',
-      percent: 10,
-      amountCents: 2500,
-    });
-    expect(selectExpensesTotal(state())).toBe(27500);
   });
 });

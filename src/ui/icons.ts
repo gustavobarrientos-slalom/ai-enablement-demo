@@ -1,9 +1,14 @@
 import { library } from '@fortawesome/fontawesome-svg-core';
 import {
+  faArrowLeft,
+  faBoxArchive,
+  faBoxOpen,
+  faCalendarDay,
   faCircleCheck,
   faCircleInfo,
   faCoins,
   faPen,
+  faPlus,
   faReceipt,
   faTrash,
   faTriangleExclamation,
@@ -22,13 +27,23 @@ library.add(
   faCircleCheck,
   faCoins,
   faTriangleExclamation,
+  faArrowLeft,
+  faBoxArchive,
+  faBoxOpen,
+  faCalendarDay,
+  faPlus,
 );
 
 export {
+  faArrowLeft,
+  faBoxArchive,
+  faBoxOpen,
+  faCalendarDay,
   faCircleCheck,
   faCircleInfo,
   faCoins,
   faPen,
+  faPlus,
   faReceipt,
   faTrash,
   faTriangleExclamation,

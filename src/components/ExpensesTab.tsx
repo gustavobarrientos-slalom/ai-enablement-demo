@@ -1,16 +1,27 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { selectExpensesTotal, useAppStore } from '../store/useAppStore';
+import {
+  selectExpenses,
+  selectExpensesTotal,
+  selectIsActiveEventEditable,
+  selectParticipants,
+  useAppStore,
+} from '../store/useAppStore';
 import { draftFromExpense, expenseTotalCents } from '../domain/expense';
 import type { AppError, ExpenseDraft } from '../domain/types';
 import { formatCents } from '../ui/currency';
-import { NO_EXPENSES_MESSAGE, tipLabel } from '../ui/messages';
-import { faCoins, faPen, faReceipt, faTrash } from '../ui/icons';
+import {
+  ARCHIVED_READ_ONLY_MESSAGE,
+  NO_EXPENSES_MESSAGE,
+  tipLabel,
+} from '../ui/messages';
+import { faBoxArchive, faCoins, faPen, faReceipt, faTrash } from '../ui/icons';
 import { ExpenseForm } from './ExpenseForm';
 
 export function ExpensesTab() {
-  const participants = useAppStore((state) => state.participants);
-  const expenses = useAppStore((state) => state.expenses);
+  const participants = useAppStore(selectParticipants);
+  const expenses = useAppStore(selectExpenses);
+  const isEditable = useAppStore(selectIsActiveEventEditable);
   const total = useAppStore(selectExpensesTotal);
   const addExpense = useAppStore((state) => state.addExpense);
   const updateExpense = useAppStore((state) => state.updateExpense);
@@ -42,10 +53,26 @@ export function ExpensesTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-slate-700">New expense</h2>
-        <ExpenseForm participants={participants} submitLabel="Add expense" onSubmit={handleAdd} />
-      </section>
+      {!isEditable && (
+        <p
+          role="status"
+          className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700"
+        >
+          <FontAwesomeIcon icon={faBoxArchive} />
+          {ARCHIVED_READ_ONLY_MESSAGE}
+        </p>
+      )}
+
+      {isEditable && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">New expense</h2>
+          <ExpenseForm
+            participants={participants}
+            submitLabel="Add expense"
+            onSubmit={handleAdd}
+          />
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-2">
@@ -67,7 +94,7 @@ export function ExpensesTab() {
                 key={expense.id}
                 className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
               >
-                {editingId === expense.id ? (
+                {isEditable && editingId === expense.id ? (
                   <ExpenseForm
                     participants={participants}
                     initialDraft={draftFromExpense(expense)}
@@ -98,6 +125,8 @@ export function ExpensesTab() {
                       <span className="text-base font-semibold">
                         {formatCents(expenseTotalCents(expense))}
                       </span>
+                      {isEditable && (
+                      <>
                       <button
                         type="button"
                         aria-label={`Edit ${expense.concept}`}
@@ -114,6 +143,8 @@ export function ExpensesTab() {
                       >
                         <FontAwesomeIcon icon={faTrash} />
                       </button>
+                      </>
+                      )}
                     </div>
                   </div>
                 )}

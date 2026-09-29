@@ -96,7 +96,7 @@ describe('validateEventName', () => {
       participants: [],
       expenses: [],
     });
-    expect(DEFAULT_EVENT_NAME).toBe('New Event');
+    expect(DEFAULT_EVENT_NAME).toBe('New event');
   });
 });
 

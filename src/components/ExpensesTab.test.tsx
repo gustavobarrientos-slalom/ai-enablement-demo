@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ExpensesTab } from './ExpensesTab';
-import { resetAppStore, useAppStore } from '../store/useAppStore';
+import { seedActiveEvent } from '../test/factories';
+import {
+  resetAppStore,
+  selectExpenses,
+  selectParticipants,
+  useAppStore,
+} from '../store/useAppStore';
 
 function state() {
   return useAppStore.getState();
@@ -22,6 +28,7 @@ async function fillBasics(user: ReturnType<typeof userEvent.setup>, concept: str
 beforeEach(() => {
   localStorage.clear();
   resetAppStore();
+  seedActiveEvent();
 });
 
 describe('empty state', () => {
@@ -48,7 +55,7 @@ describe('adding an expense', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add expense' }));
 
-    const shares = state().expenses[0]!.shares.map((share) => share.amountCents);
+    const shares = selectExpenses(state())[0]!.shares.map((share) => share.amountCents);
     expect(shares).toEqual([8334, 8333, 8333]);
 
     expect(screen.queryByText('No expenses yet')).not.toBeInTheDocument();
@@ -65,7 +72,7 @@ describe('adding an expense', () => {
     await user.click(screen.getByRole('button', { name: 'Add expense' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent('The concept is required');
-    expect(state().expenses).toEqual([]);
+    expect(selectExpenses(state())).toEqual([]);
   });
 
   it('shows an error when no beneficiary is selected', async () => {
@@ -115,9 +122,9 @@ describe('custom split', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add expense' }));
 
-    expect(state().expenses[0]!.shares).toEqual([
-      { participantId: state().participants[0]!.id, amountCents: 6000 },
-      { participantId: state().participants[1]!.id, amountCents: 4000 },
+    expect(selectExpenses(state())[0]!.shares).toEqual([
+      { participantId: selectParticipants(state())[0]!.id, amountCents: 6000 },
+      { participantId: selectParticipants(state())[1]!.id, amountCents: 4000 },
     ]);
   });
 
@@ -161,8 +168,8 @@ describe('editing and deleting', () => {
     await user.type(concept, 'Brunch');
     await user.click(row.getByRole('button', { name: 'Save changes' }));
 
-    expect(state().expenses).toHaveLength(1);
-    expect(state().expenses[0]!.concept).toBe('Brunch');
+    expect(selectExpenses(state())).toHaveLength(1);
+    expect(selectExpenses(state())[0]!.concept).toBe('Brunch');
     expect(screen.getByText('Brunch')).toBeInTheDocument();
   });
 
@@ -175,7 +182,7 @@ describe('editing and deleting', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Dinner' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    expect(state().expenses[0]!.concept).toBe('Dinner');
+    expect(selectExpenses(state())[0]!.concept).toBe('Dinner');
     expect(screen.getByRole('button', { name: 'Edit Dinner' })).toBeInTheDocument();
   });
 
@@ -189,7 +196,7 @@ describe('editing and deleting', () => {
 
     await user.click(screen.getByRole('button', { name: 'Delete Dinner' }));
 
-    expect(state().expenses).toEqual([]);
+    expect(selectExpenses(state())).toEqual([]);
     expect(screen.getByText('No expenses yet')).toBeInTheDocument();
     expect(screen.getByTestId('expenses-total')).toHaveTextContent('$0.00');
   });
@@ -235,7 +242,7 @@ describe('tips', () => {
 
     await addTipped(user, 'Dinner', '250.00', 'Percentage', '10');
 
-    expect(state().expenses[0]!.tip).toEqual({
+    expect(selectExpenses(state())[0]!.tip).toEqual({
       kind: 'percent',
       percent: 10,
       amountCents: 2500,
@@ -250,7 +257,7 @@ describe('tips', () => {
 
     await addTipped(user, 'Dinner', '250.00', 'Percentage', '10');
 
-    const id = state().expenses[0]!.id;
+    const id = selectExpenses(state())[0]!.id;
     expect(screen.getByTestId(`tip-${id}`)).toHaveTextContent('Includes $25.00 tip');
   });
 
@@ -267,7 +274,7 @@ describe('tips', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add expense' }));
 
-    const id = state().expenses[0]!.id;
+    const id = selectExpenses(state())[0]!.id;
     expect(screen.queryByTestId(`tip-${id}`)).not.toBeInTheDocument();
     expect(screen.getByTestId('expenses-total')).toHaveTextContent('$90.00');
   });
@@ -310,7 +317,7 @@ describe('tips', () => {
 
     await addTipped(user, 'Dinner', '250.00', 'Percentage', '101');
 
-    expect(state().expenses).toHaveLength(0);
+    expect(selectExpenses(state())).toHaveLength(0);
     expect(
       screen.getByText('The tip percentage must be between 0 and 100'),
     ).toBeInTheDocument();
@@ -323,7 +330,7 @@ describe('tips', () => {
 
     await addTipped(user, 'Dinner', '100.00', 'Fixed amount', '10.00');
 
-    expect(state().expenses[0]!.tip).toEqual({ kind: 'fixed', amountCents: 1000 });
+    expect(selectExpenses(state())[0]!.tip).toEqual({ kind: 'fixed', amountCents: 1000 });
     expect(screen.getByTestId('expenses-total')).toHaveTextContent('$110.00');
   });
 

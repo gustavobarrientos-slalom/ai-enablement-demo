@@ -3,7 +3,13 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SettlementTab } from './SettlementTab';
 import { App } from '../App';
-import { resetAppStore, useAppStore } from '../store/useAppStore';
+import { seedActiveEvent } from '../test/factories';
+import {
+  resetAppStore,
+  selectExpenses,
+  selectParticipants,
+  useAppStore,
+} from '../store/useAppStore';
 
 function state() {
   return useAppStore.getState();
@@ -14,7 +20,7 @@ function seed(names: string[]): string[] {
     state().addParticipant(name);
   }
 
-  return state().participants.map((participant) => participant.id);
+  return selectParticipants(state()).map((participant) => participant.id);
 }
 
 function addEqual(concept: string, amount: string, payerId: string, beneficiaryIds: string[]) {
@@ -48,6 +54,7 @@ function transferRows(): string[] {
 beforeEach(() => {
   localStorage.clear();
   resetAppStore();
+  seedActiveEvent();
 });
 
 describe('settled up state', () => {
@@ -185,7 +192,7 @@ describe('recalculation', () => {
     expect(transferRows()).toHaveLength(1);
 
     act(() => {
-      state().removeExpense(state().expenses[0]!.id);
+      state().removeExpense(selectExpenses(state())[0]!.id);
     });
     rerender(<SettlementTab />);
 
@@ -199,7 +206,7 @@ describe('recalculation', () => {
     const { rerender } = render(<SettlementTab />);
 
     act(() => {
-      state().updateExpense(state().expenses[0]!.id, {
+      state().updateExpense(selectExpenses(state())[0]!.id, {
         concept: 'Dinner',
         amount: '40.00',
         payerId: ana!,

@@ -1,4 +1,11 @@
-import type { AppError, Participant, TipMode, Transfer } from '../domain/types';
+import type {
+  AppError,
+  EventFilter,
+  EventStatus,
+  Participant,
+  TipMode,
+  Transfer,
+} from '../domain/types';
 import { formatCents } from './currency';
 
 export const PARTICIPANT_HAS_EXPENSES_MESSAGE = 'Has associated expenses';
@@ -40,7 +47,33 @@ export const ERROR_MESSAGES: Record<AppError, string> = {
   TIP_PERCENT_OUT_OF_RANGE: 'The tip percentage must be between 0 and 100',
   TIP_PERCENT_NOT_INTEGER: 'The tip percentage must be a whole number',
   TIP_TOO_MANY_DECIMALS: 'The tip can have at most 2 decimals',
+  EVENT_NOT_FOUND: 'That event is no longer available',
+  EVENT_ARCHIVED: 'This event is archived and cannot be edited',
 };
+
+export const NO_EVENTS_MESSAGE = 'No events yet';
+export const CREATE_EVENT_LABEL = 'Create event';
+export const BACK_TO_EVENTS_LABEL = 'Back to events';
+export const EVENTS_HEADING = 'Events';
+export const ARCHIVED_READ_ONLY_MESSAGE = 'This event is archived and is read-only';
+
+/** Must match the wording the delete confirmation requirement specifies. */
+export const DELETE_EVENT_CONFIRMATION = 'Delete this event? This cannot be undone.';
+
+export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
+  open: 'Open',
+  archived: 'Archived',
+};
+
+export const EVENT_FILTER_LABELS: Record<EventFilter, string> = {
+  all: 'All',
+  open: 'Open',
+  archived: 'Archived',
+};
+
+export function participantCountLabel(count: number): string {
+  return count === 1 ? '1 participant' : `${count} participants`;
+}
 
 export const TIP_LABEL = 'Tip';
 

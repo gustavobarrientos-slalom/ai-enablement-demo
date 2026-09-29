@@ -3,176 +3,379 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import {
   addParticipant,
   canRemoveParticipant,
-  createEmptyGroupState,
   isGroupValid,
-  parseGroupState,
   removeParticipant,
-  validateEventName,
 } from '../domain/group';
+import {
+  createEmptyEventsState,
+  createEvent,
+  findEvent,
+  isEventEditable,
+  migrateLegacyGroupState,
+  parseEventsState,
+  renameEvent,
+  setEventStatus,
+  sortEventsByUpdatedAt,
+  touchEvent,
+} from '../domain/event';
 import { expensesTotal, validateExpense } from '../domain/expense';
 import { computeBalances } from '../domain/balance';
 import { computeTransfers } from '../domain/settle';
 import { createId } from '../lib/ids';
+import { systemClock, type Clock } from '../lib/clock';
 import type {
   AppError,
   Balance,
+  EventFilter,
   Expense,
   ExpenseDraft,
-  GroupState,
   Participant,
   Result,
   SettlementError,
+  SplitEvent,
   Transfer,
 } from '../domain/types';
 
 export const STORAGE_KEY = 'split:v2';
-export const STORAGE_VERSION = 3;
+export const STORAGE_VERSION = 4;
 
-export interface AppState extends GroupState {
+/** The single-group schema this version migrates forward from. */
+export const LEGACY_STORAGE_VERSION = 3;
+
+let clock: Clock = systemClock;
+
+/** Tests install a deterministic clock so timestamp assertions cannot flake. */
+export function setStoreClock(next: Clock): void {
+  clock = next;
+}
+
+export function resetStoreClock(): void {
+  clock = systemClock;
+}
+
+/** Stable empty references keep selectors from re-rendering forever. */
+const NO_PARTICIPANTS: Participant[] = [];
+const NO_EXPENSES: Expense[] = [];
+
+export interface AppState {
+  events: SplitEvent[];
+  /** Transient view selection. `null` shows the Events home. */
+  activeEventId: string | null;
+  /** Persisted so a reload reopens the event the user was last in. */
+  lastActiveEventId: string | null;
+  eventFilter: EventFilter;
   lastError: AppError | null;
+
+  createEvent: (name?: string) => string | null;
+  openEvent: (id: string) => boolean;
+  closeEvent: () => void;
+  renameEvent: (id: string, raw: string) => boolean;
+  archiveEvent: (id: string) => boolean;
+  unarchiveEvent: (id: string) => boolean;
+  deleteEvent: (id: string) => void;
+  setEventFilter: (filter: EventFilter) => void;
+
   setEventName: (raw: string) => boolean;
   addParticipant: (raw: string) => boolean;
   removeParticipant: (id: string) => boolean;
   addExpense: (draft: ExpenseDraft) => boolean;
   updateExpense: (id: string, draft: ExpenseDraft) => boolean;
-  removeExpense: (id: string) => void;
+  removeExpense: (id: string) => boolean;
   clearError: () => void;
 }
 
-type PersistedState = Pick<AppState, 'eventName' | 'participants' | 'expenses'>;
+type PersistedState = Pick<AppState, 'events' | 'lastActiveEventId'>;
+
+type EventChange = Result<SplitEvent> | SplitEvent;
 
 function initialState() {
-  return { ...createEmptyGroupState(), lastError: null };
+  return {
+    ...createEmptyEventsState(),
+    activeEventId: null,
+    eventFilter: 'all' as EventFilter,
+    lastError: null,
+  };
+}
+
+function replaceEvent(events: readonly SplitEvent[], next: SplitEvent): SplitEvent[] {
+  return events.map((event) => (event.id === next.id ? next : event));
+}
+
+function isFailure(result: EventChange): result is { ok: false; error: AppError } {
+  return 'ok' in result && result.ok === false;
+}
+
+function unwrapChange(result: EventChange): SplitEvent {
+  return 'ok' in result ? (result as { ok: true; value: SplitEvent }).value : result;
 }
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set, get) => ({
-      ...initialState(),
+    (set, get) => {
+      /**
+       * Every group and expense mutation funnels through here, so the archived
+       * and no-active-event guards hold even when an action is called directly
+       * rather than through the UI.
+       */
+      function updateActiveEvent(change: (event: SplitEvent) => EventChange): boolean {
+        const { events, activeEventId } = get();
+        const active = findEvent(events, activeEventId);
 
-      setEventName: (raw) => {
-        const result = validateEventName(raw);
+        if (!active) {
+          set({ lastError: 'EVENT_NOT_FOUND' });
+          return false;
+        }
 
-        if (!result.ok) {
+        if (!isEventEditable(active)) {
+          set({ lastError: 'EVENT_ARCHIVED' });
+          return false;
+        }
+
+        const result = change(active);
+
+        if (isFailure(result)) {
           set({ lastError: result.error });
           return false;
         }
 
-        set({ eventName: result.value, lastError: null });
+        set({ events: replaceEvent(events, unwrapChange(result)), lastError: null });
         return true;
-      },
+      }
 
-      addParticipant: (raw) => {
-        const result = addParticipant(get().participants, raw, createId());
+      function updateEventById(
+        id: string,
+        change: (event: SplitEvent) => EventChange,
+      ): boolean {
+        const { events } = get();
+        const target = findEvent(events, id);
 
-        if (!result.ok) {
+        if (!target) {
+          set({ lastError: 'EVENT_NOT_FOUND' });
+          return false;
+        }
+
+        const result = change(target);
+
+        if (isFailure(result)) {
           set({ lastError: result.error });
           return false;
         }
 
-        set({ participants: result.value, lastError: null });
+        set({ events: replaceEvent(events, unwrapChange(result)), lastError: null });
         return true;
-      },
+      }
 
-      removeParticipant: (id) => {
-        const { participants, expenses } = get();
-        const result = removeParticipant(participants, id, expenses);
+      return {
+        ...initialState(),
 
-        if (!result.ok) {
-          set({ lastError: result.error });
-          return false;
-        }
+        createEvent: (name) => {
+          const result = createEvent(createId(), name, clock());
 
-        set({ participants: result.value, lastError: null });
-        return true;
-      },
+          if (!result.ok) {
+            set({ lastError: result.error });
+            return null;
+          }
 
-      addExpense: (draft) => {
-        const result = validateExpense(draft, get().participants, createId());
+          const event = result.value;
 
-        if (!result.ok) {
-          set({ lastError: result.error });
-          return false;
-        }
+          set({
+            events: [...get().events, event],
+            activeEventId: event.id,
+            lastActiveEventId: event.id,
+            lastError: null,
+          });
 
-        set({ expenses: [...get().expenses, result.value], lastError: null });
-        return true;
-      },
+          return event.id;
+        },
 
-      updateExpense: (id, draft) => {
-        const { participants, expenses } = get();
-        const index = expenses.findIndex((expense) => expense.id === id);
+        openEvent: (id) => {
+          if (!findEvent(get().events, id)) {
+            set({ lastError: 'EVENT_NOT_FOUND' });
+            return false;
+          }
 
-        if (index === -1) {
-          return false;
-        }
+          set({ activeEventId: id, lastActiveEventId: id, lastError: null });
+          return true;
+        },
 
-        const result = validateExpense(draft, participants, id);
+        // Leaves `lastActiveEventId` alone so a reload still reopens the event.
+        closeEvent: () => set({ activeEventId: null, lastError: null }),
 
-        if (!result.ok) {
-          set({ lastError: result.error });
-          return false;
-        }
+        renameEvent: (id, raw) =>
+          updateEventById(id, (event) => renameEvent(event, raw, clock())),
 
-        const next = expenses.slice();
-        next[index] = result.value;
+        archiveEvent: (id) =>
+          updateEventById(id, (event) => setEventStatus(event, 'archived', clock())),
 
-        set({ expenses: next, lastError: null });
-        return true;
-      },
+        unarchiveEvent: (id) =>
+          updateEventById(id, (event) => setEventStatus(event, 'open', clock())),
 
-      removeExpense: (id) => {
-        set({
-          expenses: get().expenses.filter((expense) => expense.id !== id),
-          lastError: null,
-        });
-      },
+        deleteEvent: (id) => {
+          const { events, activeEventId, lastActiveEventId } = get();
 
-      clearError: () => set({ lastError: null }),
-    }),
+          set({
+            events: events.filter((event) => event.id !== id),
+            activeEventId: activeEventId === id ? null : activeEventId,
+            lastActiveEventId: lastActiveEventId === id ? null : lastActiveEventId,
+            lastError: null,
+          });
+        },
+
+        setEventFilter: (filter) => set({ eventFilter: filter }),
+
+        setEventName: (raw) =>
+          updateActiveEvent((event) => renameEvent(event, raw, clock())),
+
+        addParticipant: (raw) =>
+          updateActiveEvent((event) => {
+            const result = addParticipant(event.participants, raw, createId());
+
+            if (!result.ok) {
+              return result;
+            }
+
+            return { ...touchEvent(event, clock()), participants: result.value };
+          }),
+
+        removeParticipant: (id) =>
+          updateActiveEvent((event) => {
+            const result = removeParticipant(event.participants, id, event.expenses);
+
+            if (!result.ok) {
+              return result;
+            }
+
+            return { ...touchEvent(event, clock()), participants: result.value };
+          }),
+
+        addExpense: (draft) =>
+          updateActiveEvent((event) => {
+            const result = validateExpense(draft, event.participants, createId());
+
+            if (!result.ok) {
+              return result;
+            }
+
+            return {
+              ...touchEvent(event, clock()),
+              expenses: [...event.expenses, result.value],
+            };
+          }),
+
+        updateExpense: (id, draft) => {
+          const active = findEvent(get().events, get().activeEventId);
+
+          // A missing expense is not a validation failure, so it must not
+          // overwrite `lastError` with a misleading message.
+          if (active && !active.expenses.some((expense) => expense.id === id)) {
+            return false;
+          }
+
+          return updateActiveEvent((event) => {
+            const index = event.expenses.findIndex((expense) => expense.id === id);
+            const result = validateExpense(draft, event.participants, id);
+
+            if (!result.ok) {
+              return result;
+            }
+
+            const expenses = event.expenses.slice();
+            expenses[index] = result.value;
+
+            return { ...touchEvent(event, clock()), expenses };
+          });
+        },
+
+        removeExpense: (id) =>
+          updateActiveEvent((event) => ({
+            ...touchEvent(event, clock()),
+            expenses: event.expenses.filter((expense) => expense.id !== id),
+          })),
+
+        clearError: () => set({ lastError: null }),
+      };
+    },
     {
       name: STORAGE_KEY,
       version: STORAGE_VERSION,
       storage: createJSONStorage(() => localStorage),
       partialize: (state): PersistedState => ({
-        eventName: state.eventName,
-        participants: state.participants,
-        expenses: state.expenses,
+        events: state.events,
+        lastActiveEventId: state.lastActiveEventId,
       }),
-      // Version 2 differs only by the absent optional tip, which
-      // `parseGroupState` normalizes to null, so it is safe to pass through.
-      // Every other version carries no trustworthy shape, so start empty.
+      /**
+       * The only supported predecessor is the single-group schema, whose data
+       * is wrapped into one event. Anything older or unrecognized carries no
+       * trustworthy shape, so it starts empty.
+       */
       migrate: (persisted, version) =>
-        version === STORAGE_VERSION - 1 ? persisted : createEmptyGroupState(),
+        version === LEGACY_STORAGE_VERSION
+          ? migrateLegacyGroupState(persisted, createId(), clock())
+          : createEmptyEventsState(),
       merge: (persisted, current) => {
-        const parsed = parseGroupState(persisted);
+        const parsed = parseEventsState(persisted) ?? createEmptyEventsState();
 
-        return parsed ? { ...current, ...parsed } : { ...current, ...createEmptyGroupState() };
+        return {
+          ...current,
+          ...parsed,
+          // Reopening the last active event is what makes a reload feel
+          // continuous; an orphan id was already cleared during parsing.
+          activeEventId: parsed.lastActiveEventId,
+        };
       },
     },
   ),
 );
 
+export function selectActiveEvent(state: AppState): SplitEvent | null {
+  return findEvent(state.events, state.activeEventId);
+}
+
+export function selectEvents(state: AppState): SplitEvent[] {
+  return state.events;
+}
+
+/** Newest first, then filtered for display only. */
+export function selectVisibleEvents(state: AppState): SplitEvent[] {
+  const sorted = sortEventsByUpdatedAt(state.events);
+
+  return state.eventFilter === 'all'
+    ? sorted
+    : sorted.filter((event) => event.status === state.eventFilter);
+}
+
+export function selectEventName(state: AppState): string | null {
+  return selectActiveEvent(state)?.name ?? null;
+}
+
+export function selectParticipants(state: AppState): Participant[] {
+  return selectActiveEvent(state)?.participants ?? NO_PARTICIPANTS;
+}
+
+export function selectExpenses(state: AppState): Expense[] {
+  return selectActiveEvent(state)?.expenses ?? NO_EXPENSES;
+}
+
 export function selectIsGroupValid(state: AppState): boolean {
-  return isGroupValid(state.participants);
+  return isGroupValid(selectParticipants(state));
+}
+
+export function selectIsActiveEventEditable(state: AppState): boolean {
+  const active = selectActiveEvent(state);
+
+  return active ? isEventEditable(active) : false;
 }
 
 export function selectCanRemoveParticipant(
   state: AppState,
 ): (participantId: string) => boolean {
-  return (participantId: string) => canRemoveParticipant(participantId, state.expenses);
-}
+  const expenses = selectExpenses(state);
 
-export function selectParticipants(state: AppState): Participant[] {
-  return state.participants;
-}
-
-export function selectExpenses(state: AppState): Expense[] {
-  return state.expenses;
+  return (participantId: string) => canRemoveParticipant(participantId, expenses);
 }
 
 export function selectExpensesTotal(state: AppState): number {
-  return expensesTotal(state.expenses);
+  return expensesTotal(selectExpenses(state));
 }
 
 /**
@@ -182,7 +385,7 @@ export function selectExpensesTotal(state: AppState): number {
  * raw participants and expenses and call these during render instead.
  */
 export function selectBalances(state: AppState): Balance[] {
-  return computeBalances(state.participants, state.expenses);
+  return computeBalances(selectParticipants(state), selectExpenses(state));
 }
 
 export function selectTransfers(

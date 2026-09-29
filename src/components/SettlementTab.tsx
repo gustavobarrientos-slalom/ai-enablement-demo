@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { useAppStore } from '../store/useAppStore';
+import { selectExpenses, selectParticipants, useAppStore } from '../store/useAppStore';
 import { computeBalances, isSettledUp } from '../domain/balance';
 import { computeTransfers } from '../domain/settle';
 import { formatCents } from '../ui/currency';
@@ -14,8 +14,8 @@ import {
 import { faCircleCheck, faTriangleExclamation } from '../ui/icons';
 
 export function SettlementTab() {
-  const participants = useAppStore((state) => state.participants);
-  const expenses = useAppStore((state) => state.expenses);
+  const participants = useAppStore(selectParticipants);
+  const expenses = useAppStore(selectExpenses);
 
   // Derived during render rather than in a selector: these build new arrays
   // every call, which would loop useSyncExternalStore forever.
