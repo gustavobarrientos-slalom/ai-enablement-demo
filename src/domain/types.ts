@@ -91,6 +91,8 @@ export interface SplitEvent {
   updatedAt: string;
   participants: Participant[];
   expenses: Expense[];
+  /** Only paid identities are stored; unpaid transfers are derived. */
+  paidTransfers: Transfer[];
 }
 
 export interface EventsState {

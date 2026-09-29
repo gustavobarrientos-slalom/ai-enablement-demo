@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   PRE_CATEGORY_STORAGE_VERSION,
+  PRE_PAYMENT_STORAGE_VERSION,
   STORAGE_KEY,
   STORAGE_VERSION,
   resetAppStore,
@@ -144,6 +145,7 @@ describe('migrating a version 4 event collection', () => {
     store(V4_PAYLOAD);
     await rehydrate();
 
+    expect(state().events.map((event) => event.paidTransfers)).toEqual([[], []]);
     const categories = state().events.flatMap((event) =>
       event.expenses.map((expense) => expense.category),
     );
@@ -239,7 +241,46 @@ describe('migrating a version 4 event collection', () => {
     };
 
     expect(written.version).toBe(STORAGE_VERSION);
-    expect(STORAGE_VERSION).toBe(5);
+    expect(STORAGE_VERSION).toBe(6);
+  });
+});
+
+describe('migrating a version 5 event collection', () => {
+  it('defaults missing paid transfers to an empty checklist', async () => {
+    const payload = clone(V4_PAYLOAD);
+    payload.version = PRE_PAYMENT_STORAGE_VERSION;
+
+    for (const event of payload.state.events) {
+      for (const expense of event.expenses) {
+        (expense as Record<string, unknown>).category = 'other';
+      }
+    }
+
+    store(payload);
+    await rehydrate();
+
+    expect(state().events.map((event) => event.paidTransfers)).toEqual([[], []]);
+  });
+
+  it('preserves a valid paid tuple that remains in the transfer plan', async () => {
+    const payload = clone(V4_PAYLOAD);
+    payload.version = PRE_PAYMENT_STORAGE_VERSION;
+
+    for (const event of payload.state.events) {
+      for (const expense of event.expenses) {
+        (expense as Record<string, unknown>).category = 'other';
+      }
+    }
+
+    (payload.state.events[0] as Record<string, unknown>).paidTransfers = [
+      { fromId: 'p2', toId: 'p1', amountCents: 3500 },
+    ];
+    store(payload);
+    await rehydrate();
+
+    expect(eventById('ev-open').paidTransfers).toEqual([
+      { fromId: 'p2', toId: 'p1', amountCents: 3500 },
+    ]);
   });
 });
 
@@ -256,6 +297,7 @@ describe('migrating the version 3 single group', () => {
     expect(event.name).toBe('Old group');
     expect(event.expenses[0]!.category).toBe('other');
     expect(event.expenses[0]!.tip).toBeNull();
+    expect(event.paidTransfers).toEqual([]);
   });
 
   it('still discards an untouched legacy group', async () => {
@@ -288,6 +330,22 @@ describe('current version payloads', () => {
   it('discards a current-version expense with no category', async () => {
     const payload = clone(V4_PAYLOAD);
     payload.version = STORAGE_VERSION;
+    store(payload);
+
+    await expect(rehydrate()).resolves.not.toThrow();
+    expect(state().events).toEqual([]);
+  });
+
+  it('discards a current-version event missing its paid checklist field', async () => {
+    const payload = clone(V4_PAYLOAD);
+    payload.version = STORAGE_VERSION;
+    payload.state.events.forEach((event) => {
+      (event as Record<string, unknown>).paidTransfers = [];
+      for (const expense of event.expenses) {
+        (expense as Record<string, unknown>).category = 'other';
+      }
+    });
+    delete (payload.state.events[0] as Record<string, unknown>).paidTransfers;
     store(payload);
 
     await expect(rehydrate()).resolves.not.toThrow();

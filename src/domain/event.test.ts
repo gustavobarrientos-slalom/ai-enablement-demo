@@ -268,6 +268,7 @@ describe('parseEventsState', () => {
           updatedAt: event.updatedAt,
           participants: event.participants,
           expenses: event.expenses,
+          paidTransfers: event.paidTransfers,
         },
       ],
       lastActiveEventId: event.id,
@@ -279,6 +280,7 @@ describe('parseEventsState', () => {
 
     expect(parsed?.events).toHaveLength(1);
     expect(parsed?.lastActiveEventId).toBe('e1');
+    expect(parsed?.events[0]?.paidTransfers).toEqual([]);
   });
 
   it('accepts an empty collection', () => {
@@ -352,6 +354,32 @@ describe('parseEventsState', () => {
     );
 
     expect(parseEventsState(payload)).toBeNull();
+  });
+
+  it('rejects malformed or duplicate paid transfer tuples', () => {
+    const payload = persisted(makeEvent());
+    const event = payload.events[0] as Record<string, unknown>;
+
+    event.paidTransfers = [
+      { fromId: 'p1', toId: 'p2', amountCents: 100 },
+      { fromId: 'p1', toId: 'p2', amountCents: 100 },
+    ];
+    expect(parseEventsState(payload)).toBeNull();
+
+    event.paidTransfers = [{ fromId: 'p1', toId: 'p2', amountCents: 0 }];
+    expect(parseEventsState(payload)).toBeNull();
+
+    event.paidTransfers = 'not-an-array';
+    expect(parseEventsState(payload)).toBeNull();
+  });
+
+  it('prunes a well-formed paid tuple absent from the recomputed plan', () => {
+    const payload = persisted(makeEvent());
+    (payload.events[0] as Record<string, unknown>).paidTransfers = [
+      { fromId: 'p1', toId: 'p2', amountCents: 100 },
+    ];
+
+    expect(parseEventsState(payload)?.events[0]?.paidTransfers).toEqual([]);
   });
 
   it('rejects non-object and non-array shapes', () => {

@@ -12,6 +12,7 @@ import {
   selectExpenses,
   selectExpensesTotal,
   selectIsGroupValid,
+  selectPaidTransfers,
   selectParticipants,
   selectTransfers,
   selectVisibleEvents,
@@ -706,6 +707,249 @@ describe('expenses', () => {
     expect(selectExpensesTotal(state())).toBe(10000);
     expect(Object.keys(state())).not.toContain('total');
     expect(Object.keys(state())).not.toContain('balances');
+  });
+});
+
+describe('transfer payment checklist', () => {
+  function seedTransfer() {
+    seedActiveEvent('Payment test');
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+    const [ana, luis] = selectParticipants(state());
+
+    state().addExpense({
+      concept: 'Dinner',
+      amount: '100.00',
+      payerId: ana!.id,
+      splitMode: 'equal',
+      beneficiaryIds: [ana!.id, luis!.id],
+      customAmounts: {},
+      tipMode: 'none',
+      tipValue: '',
+      category: 'other',
+    });
+
+    const plan = selectTransfers(state());
+    if (!plan.ok || plan.value.length !== 1) {
+      throw new Error('expected a single transfer');
+    }
+
+    return { ana: ana!, luis: luis!, transfer: plan.value[0]! };
+  }
+
+  it('toggles a current transfer without changing balances, plan, status, or timestamps', () => {
+    const { transfer } = seedTransfer();
+    const beforeBalances = selectBalances(state());
+    const beforePlan = selectTransfers(state());
+    const event = activeEvent();
+
+    expect(state().toggleTransferPaid(transfer)).toBe(true);
+    expect(selectPaidTransfers(state())).toEqual([transfer]);
+    expect(selectBalances(state())).toEqual(beforeBalances);
+    expect(selectTransfers(state())).toEqual(beforePlan);
+    expect(activeEvent().status).toBe('open');
+    expect(activeEvent().updatedAt).toBe(event.updatedAt);
+
+    expect(state().toggleTransferPaid(transfer)).toBe(true);
+    expect(selectPaidTransfers(state())).toEqual([]);
+  });
+
+  it('rejects invalid or absent transfers without changing checklist state', () => {
+    const { transfer } = seedTransfer();
+    state().toggleTransferPaid(transfer);
+    const before = activeEvent();
+
+    expect(
+      state().toggleTransferPaid({ ...transfer, amountCents: 0 }),
+    ).toBe(false);
+    expect(
+      state().toggleTransferPaid({ ...transfer, amountCents: 6000 }),
+    ).toBe(false);
+    expect(activeEvent()).toEqual(before);
+  });
+
+  it('keeps marks on failed and no-op expense actions', () => {
+    const { transfer } = seedTransfer();
+    state().toggleTransferPaid(transfer);
+    const expense = selectExpenses(state())[0]!;
+
+    expect(
+      state().updateExpense(expense.id, {
+        concept: '',
+        amount: '100.00',
+        payerId: expense.payerId,
+        splitMode: 'equal',
+        beneficiaryIds: expense.shares.map((share) => share.participantId),
+        customAmounts: {},
+        tipMode: 'none',
+        tipValue: '',
+        category: 'other',
+      }),
+    ).toBe(false);
+    expect(state().removeExpense('missing')).toBe(true);
+    expect(selectPaidTransfers(state())).toEqual([transfer]);
+  });
+
+  it('does not reconcile stored marks for no-op mutations', () => {
+    const { transfer } = seedTransfer();
+    const stale = { ...transfer, amountCents: transfer.amountCents + 1 };
+    const event = activeEvent();
+
+    useAppStore.setState({
+      events: state().events.map((candidate) =>
+        candidate.id === event.id
+          ? { ...candidate, paidTransfers: [stale] }
+          : candidate,
+      ),
+    });
+    const before = activeEvent();
+
+    expect(state().removeExpense('missing')).toBe(true);
+    expect(state().removeParticipant('missing')).toBe(true);
+    expect(state().setEventName(before.name)).toBe(true);
+    expect(activeEvent()).toEqual(before);
+    expect(activeEvent().paidTransfers).toEqual([stale]);
+  });
+
+  it('retains unchanged tuples and discards changed and later reappearing tuples', () => {
+    const { ana, luis, transfer } = seedTransfer();
+    state().toggleTransferPaid(transfer);
+    const expense = selectExpenses(state())[0]!;
+
+    expect(
+      state().updateExpense(expense.id, {
+        concept: 'Renamed dinner',
+        amount: '100.00',
+        payerId: ana.id,
+        splitMode: 'equal',
+        beneficiaryIds: [ana.id, luis.id],
+        customAmounts: {},
+        tipMode: 'none',
+        tipValue: '',
+        category: 'other',
+      }),
+    ).toBe(true);
+    expect(selectPaidTransfers(state())).toEqual([transfer]);
+    expect(state().addParticipant('Carla')).toBe(true);
+    const carla = selectParticipants(state()).find(
+      (participant) => participant.name === 'Carla',
+    )!;
+    expect(state().removeParticipant(carla.id)).toBe(true);
+    expect(selectPaidTransfers(state())).toEqual([transfer]);
+
+    expect(
+      state().updateExpense(expense.id, {
+        concept: 'Renamed dinner',
+        amount: '120.00',
+        payerId: ana.id,
+        splitMode: 'equal',
+        beneficiaryIds: [ana.id, luis.id],
+        customAmounts: {},
+        tipMode: 'none',
+        tipValue: '',
+        category: 'other',
+      }),
+    ).toBe(true);
+    const changedPlan = selectTransfers(state());
+    expect(changedPlan.ok ? changedPlan.value[0]?.amountCents : null).toBe(6000);
+    expect(selectPaidTransfers(state())).toEqual([]);
+
+    state().updateExpense(expense.id, {
+      concept: 'Renamed dinner',
+      amount: '100.00',
+      payerId: ana.id,
+      splitMode: 'equal',
+      beneficiaryIds: [ana.id, luis.id],
+      customAmounts: {},
+      tipMode: 'none',
+      tipValue: '',
+      category: 'other',
+    });
+    expect(selectPaidTransfers(state())).toEqual([]);
+  });
+
+  it('prunes marks when the plan becomes empty', () => {
+    const { transfer } = seedTransfer();
+    state().toggleTransferPaid(transfer);
+
+    expect(state().removeExpense(selectExpenses(state())[0]!.id)).toBe(true);
+    expect(selectPaidTransfers(state())).toEqual([]);
+    expect(selectTransfers(state())).toEqual({ ok: true, value: [] });
+  });
+
+  it('keeps checklist marks isolated between events', () => {
+    const first = seedTransfer();
+    const firstEventId = activeEvent().id;
+    state().toggleTransferPaid(first.transfer);
+
+    seedActiveEvent('Second event');
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+    setActiveEventData({
+      participants: [
+        { id: first.ana.id, name: 'Ana' },
+        { id: first.luis.id, name: 'Luis' },
+      ],
+      expenses: [
+        makeExpense({
+          payerId: first.ana.id,
+          beneficiaryIds: [first.ana.id, first.luis.id],
+          amountCents: 10000,
+        }),
+      ],
+    });
+
+    expect(selectTransfers(state())).toEqual({
+      ok: true,
+      value: [first.transfer],
+    });
+    expect(selectPaidTransfers(state())).toEqual([]);
+    state().openEvent(firstEventId);
+    expect(selectPaidTransfers(state())).toEqual([first.transfer]);
+  });
+
+  it('guards archived events in the store while retaining visible marks', () => {
+    const { transfer } = seedTransfer();
+    state().toggleTransferPaid(transfer);
+    const id = activeEvent().id;
+    state().archiveEvent(id);
+    const archived = activeEvent();
+
+    expect(state().toggleTransferPaid(transfer)).toBe(false);
+    expect(state().lastError).toBe('EVENT_ARCHIVED');
+    expect(activeEvent().paidTransfers).toEqual([transfer]);
+    expect(activeEvent().updatedAt).toBe(archived.updatedAt);
+  });
+
+  it('restores valid marks and prunes stale persisted tuples on reload', async () => {
+    const { transfer } = seedTransfer();
+    state().toggleTransferPaid(transfer);
+    await reload();
+    expect(selectPaidTransfers(state())).toEqual([transfer]);
+
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.state.events[0].paidTransfers = [
+      { ...transfer, amountCents: transfer.amountCents + 1 },
+    ];
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    await useAppStore.persist.rehydrate();
+
+    expect(state().events).toHaveLength(1);
+    expect(selectPaidTransfers(state())).toEqual([]);
+  });
+
+  it('discards malformed persisted paid tuples without crashing', async () => {
+    seedTransfer();
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.state.events[0].paidTransfers = [
+      { fromId: 'p1', toId: 'p2', amountCents: 1.5 },
+    ];
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().events).toEqual([]);
   });
 });
 

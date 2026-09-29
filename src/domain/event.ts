@@ -1,5 +1,8 @@
 import { DEFAULT_CATEGORY } from './category';
+import { computeBalances } from './balance';
 import { expensesTotal } from './expense';
+import { reconcilePaidTransfers, isValidTransfer } from './paidTransfers';
+import { computeTransfers } from './settle';
 import {
   DEFAULT_EVENT_NAME,
   normalizeName,
@@ -15,6 +18,7 @@ import {
   type GroupState,
   type Result,
   type SplitEvent,
+  type Transfer,
 } from './types';
 
 export function createEmptyEventsState(): EventsState {
@@ -44,6 +48,7 @@ export function createEvent(
     updatedAt: now,
     participants: [],
     expenses: [],
+    paidTransfers: [],
   });
 }
 
@@ -180,7 +185,27 @@ function parseEvent(value: unknown): SplitEvent | null {
     return null;
   }
 
-  return {
+  const rawPaidTransfers = candidate.paidTransfers;
+
+  if (
+    !Array.isArray(rawPaidTransfers) ||
+    !rawPaidTransfers.every(isValidTransfer)
+  ) {
+    return null;
+  }
+
+  const paidTransfers = rawPaidTransfers as Transfer[];
+  const paidKeys = new Set(
+    paidTransfers.map((transfer) =>
+      JSON.stringify([transfer.fromId, transfer.toId, transfer.amountCents]),
+    ),
+  );
+
+  if (paidKeys.size !== paidTransfers.length) {
+    return null;
+  }
+
+  const event: SplitEvent = {
     id,
     name: normalizeName(name),
     status,
@@ -188,6 +213,16 @@ function parseEvent(value: unknown): SplitEvent | null {
     updatedAt,
     participants: group.participants,
     expenses: group.expenses,
+    paidTransfers,
+  };
+  const plan = computeTransfers(computeBalances(event.participants, event.expenses));
+
+  return {
+    ...event,
+    paidTransfers: reconcilePaidTransfers(
+      event.paidTransfers,
+      plan.ok ? plan.value : [],
+    ),
   };
 }
 
@@ -266,6 +301,7 @@ export function migrateLegacyGroupState(
     updatedAt: now,
     participants: group.participants,
     expenses: group.expenses,
+    paidTransfers: [],
   };
 
   return { events: [event], lastActiveEventId: id };
@@ -322,6 +358,37 @@ export function migrateEventsCategories(value: unknown): unknown {
       const raw = event as Record<string, unknown>;
 
       return { ...raw, expenses: withDefaultCategories(raw.expenses) };
+    }),
+  };
+}
+
+/**
+ * Adds an empty checklist to recognized event payloads that predate payment
+ * tracking. Existing values are left for the strict current parser to check.
+ */
+export function migrateEventsPaidTransfers(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if (!Array.isArray(candidate.events)) {
+    return candidate;
+  }
+
+  return {
+    ...candidate,
+    events: candidate.events.map((event) => {
+      if (typeof event !== 'object' || event === null) {
+        return event;
+      }
+
+      const raw = event as Record<string, unknown>;
+
+      return raw.paidTransfers === undefined
+        ? { ...raw, paidTransfers: [] }
+        : raw;
     }),
   };
 }

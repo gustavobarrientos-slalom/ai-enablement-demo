@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ERROR_MESSAGES,
+  ALL_PAID_EVENT_CLOSED_MESSAGE,
   NO_EXPENSES_MESSAGE,
   SETTLED_UP_MESSAGE,
   TIP_LABEL,
@@ -10,6 +11,7 @@ import {
   splitDifferenceLabel,
   tipLabel,
   transferLabel,
+  transferProgressLabel,
 } from './messages';
 
 describe('errorMessage', () => {
@@ -56,6 +58,11 @@ describe('settlement copy', () => {
 
   it('uses the settled wording from the spec', () => {
     expect(SETTLED_UP_MESSAGE).toBe('Everyone is settled up');
+  });
+
+  it('formats paid progress and the full payment message exactly', () => {
+    expect(transferProgressLabel(1, 3)).toBe('1 of 3 paid');
+    expect(ALL_PAID_EVENT_CLOSED_MESSAGE).toBe('All paid — event closed');
   });
 
   it('maps the unbalanced nets error to its message', () => {

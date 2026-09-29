@@ -1,25 +1,37 @@
 import { useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { selectExpenses, selectParticipants, useAppStore } from '../store/useAppStore';
-import { computeBalances, isSettledUp } from '../domain/balance';
+import {
+  selectExpenses,
+  selectIsActiveEventEditable,
+  selectPaidTransfers,
+  selectParticipants,
+  useAppStore,
+} from '../store/useAppStore';
+import { computeBalances } from '../domain/balance';
 import { computeTransfers } from '../domain/settle';
+import { isTransferPaid } from '../domain/paidTransfers';
 import { categoryPercent, categoryTotals } from '../domain/category';
 import { expensesTotal } from '../domain/expense';
 import { formatCents, formatPercent } from '../ui/currency';
 import {
   BALANCE_HEADINGS,
+  ALL_PAID_EVENT_CLOSED_MESSAGE,
   CATEGORY_BREAKDOWN_HEADING,
   CATEGORY_LABELS,
   NETS_DO_NOT_SUM_MESSAGE,
   SETTLED_UP_MESSAGE,
   TRANSFERS_HEADING,
   transferLabel,
+  transferProgressLabel,
 } from '../ui/messages';
 import { CATEGORY_ICONS, faCircleCheck, faTriangleExclamation } from '../ui/icons';
 
 export function SettlementTab() {
   const participants = useAppStore(selectParticipants);
   const expenses = useAppStore(selectExpenses);
+  const paidTransfers = useAppStore(selectPaidTransfers);
+  const isEditable = useAppStore(selectIsActiveEventEditable);
+  const toggleTransferPaid = useAppStore((state) => state.toggleTransferPaid);
 
   // Derived during render rather than in a selector: these build new arrays
   // every call, which would loop useSyncExternalStore forever.
@@ -32,8 +44,6 @@ export function SettlementTab() {
   // Same reason: derived on render and never persisted.
   const breakdown = useMemo(() => categoryTotals(expenses), [expenses]);
   const groupTotal = useMemo(() => expensesTotal(expenses), [expenses]);
-
-  const settled = isSettledUp(balances);
 
   function nameOf(id: string): string {
     return participants.find((participant) => participant.id === id)?.name ?? '';
@@ -132,28 +142,60 @@ export function SettlementTab() {
             <FontAwesomeIcon icon={faTriangleExclamation} />
             {NETS_DO_NOT_SUM_MESSAGE}
           </p>
-        ) : settled ? (
+        ) : plan.value.length === 0 ? (
           <p className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-6 text-sm text-slate-600">
             <FontAwesomeIcon icon={faCircleCheck} className="text-2xl text-emerald-600" />
             {SETTLED_UP_MESSAGE}
           </p>
         ) : (
-          <ul aria-label="Transfers" className="flex flex-col gap-2">
-            {plan.value.map((transfer) => (
-              <li
-                key={`${transfer.fromId}-${transfer.toId}-${transfer.amountCents}`}
-                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
-              >
-                <span className="min-w-0 truncate text-base">
-                  {nameOf(transfer.fromId)} &rarr; {nameOf(transfer.toId)}
-                </span>
-                <span className="shrink-0 text-base font-semibold">
-                  {formatCents(transfer.amountCents)}
-                </span>
-                <span className="sr-only">{transferLabel(transfer, participants)}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <p data-testid="transfer-progress" className="text-sm text-slate-600">
+              {transferProgressLabel(
+                plan.value.filter((transfer) =>
+                  isTransferPaid(transfer, paidTransfers),
+                ).length,
+                plan.value.length,
+              )}
+            </p>
+            {plan.value.every((transfer) =>
+              isTransferPaid(transfer, paidTransfers),
+            ) && (
+              <p data-testid="all-transfers-paid" className="text-sm font-semibold text-emerald-700">
+                {ALL_PAID_EVENT_CLOSED_MESSAGE}
+              </p>
+            )}
+            <ul aria-label="Transfers" className="flex flex-col gap-2">
+              {plan.value.map((transfer) => {
+                const label = transferLabel(transfer, participants);
+                const paid = isTransferPaid(transfer, paidTransfers);
+
+                return (
+                  <li
+                    key={`${transfer.fromId}-${transfer.toId}-${transfer.amountCents}`}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-base">
+                      {nameOf(transfer.fromId)} &rarr; {nameOf(transfer.toId)}
+                    </span>
+                    <span className="shrink-0 text-base font-semibold">
+                      {formatCents(transfer.amountCents)}
+                    </span>
+                    <label className="flex shrink-0 items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        aria-label={`Paid: ${label}`}
+                        checked={paid}
+                        disabled={!isEditable}
+                        onChange={() => toggleTransferPaid(transfer)}
+                      />
+                      Paid
+                    </label>
+                    <span className="sr-only">{label}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </section>
     </div>

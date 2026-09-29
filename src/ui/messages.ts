@@ -12,7 +12,11 @@ import { formatCents } from './currency';
 export const PARTICIPANT_HAS_EXPENSES_MESSAGE = 'Has associated expenses';
 export const NO_EXPENSES_MESSAGE = 'No expenses yet';
 export const SETTLED_UP_MESSAGE = 'Everyone is settled up';
+export const ALL_PAID_EVENT_CLOSED_MESSAGE = 'All paid — event closed';
 export const NETS_DO_NOT_SUM_MESSAGE = 'Balances do not add up';
+export function transferProgressLabel(paid: number, total: number): string {
+  return `${paid} of ${total} paid`;
+}
 
 export const BALANCE_HEADINGS = {
   participant: 'Participant',

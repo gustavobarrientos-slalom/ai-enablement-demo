@@ -65,6 +65,8 @@ describe('settled up state', () => {
 
     expect(screen.getByText('Everyone is settled up')).toBeInTheDocument();
     expect(screen.queryByRole('list', { name: 'Transfers' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('transfer-progress')).not.toBeInTheDocument();
+    expect(screen.queryByText('All paid — event closed')).not.toBeInTheDocument();
   });
 
   it('shows the settled message when expenses cancel out', () => {
@@ -223,6 +225,144 @@ describe('recalculation', () => {
     rerender(<SettlementTab />);
 
     expect(transferRows()).toEqual(['Luis -> Ana $20.00']);
+  });
+});
+
+describe('transfer payment checklist', () => {
+  function seedOneTransfer(): [string, string] {
+    const [ana, luis] = seed(['Ana', 'Luis']);
+    addEqual('Dinner', '100.00', ana!, [ana!, luis!]);
+
+    return [ana!, luis!];
+  }
+
+  it('checks and unchecks a transfer and shows full progress without changing settlement', async () => {
+    const user = userEvent.setup();
+    const [ana, luis] = seedOneTransfer();
+    const { rerender } = render(<SettlementTab />);
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'Paid: Luis -> Ana $50.00',
+    });
+
+    await user.click(checkbox);
+    rerender(<SettlementTab />);
+
+    expect(checkbox).toBeChecked();
+    expect(screen.getByText('1 of 1 paid')).toBeInTheDocument();
+    expect(screen.getByText('All paid — event closed')).toBeInTheDocument();
+    expect(state().events[0]!.status).toBe('open');
+    expect(state().events[0]!.participants.map((participant) => participant.id)).toEqual([
+      ana,
+      luis,
+    ]);
+    expect(state().events[0]!.expenses).toHaveLength(1);
+    expect(screen.getByTestId(`net-${ana}`)).toHaveTextContent('$50.00');
+    expect(screen.getByTestId(`net-${luis}`)).toHaveTextContent('-$50.00');
+
+    await user.click(checkbox);
+    rerender(<SettlementTab />);
+
+    expect(checkbox).not.toBeChecked();
+    expect(screen.getByText('0 of 1 paid')).toBeInTheDocument();
+    expect(screen.queryByText('All paid — event closed')).not.toBeInTheDocument();
+  });
+
+  it('shows partial progress for a multi-transfer plan', async () => {
+    const user = userEvent.setup();
+    const [ana, beto, carla] = seed(['Ana', 'Beto', 'Carla']);
+    addEqual('Dinner', '100.00', ana!, [beto!]);
+    addEqual('Taxi', '40.00', carla!, [beto!]);
+    render(<SettlementTab />);
+
+    expect(screen.getByText('0 of 2 paid')).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('checkbox', {
+        name: 'Paid: Beto -> Ana $100.00',
+      }),
+    );
+
+    expect(screen.getByText('1 of 2 paid')).toBeInTheDocument();
+    expect(screen.queryByText('All paid — event closed')).not.toBeInTheDocument();
+  });
+
+  it('keeps archived payments visible with disabled checkboxes', async () => {
+    const user = userEvent.setup();
+    seedOneTransfer();
+    state().toggleTransferPaid({
+      fromId: selectParticipants(state())[1]!.id,
+      toId: selectParticipants(state())[0]!.id,
+      amountCents: 5000,
+    });
+    state().archiveEvent(state().activeEventId!);
+
+    render(<SettlementTab />);
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'Paid: Luis -> Ana $50.00',
+    });
+    expect(checkbox).toBeChecked();
+    expect(checkbox).toBeDisabled();
+    expect(screen.getByText('1 of 1 paid')).toBeInTheDocument();
+    expect(screen.getByText('All paid — event closed')).toBeInTheDocument();
+    await user.click(checkbox);
+    expect(checkbox).toBeChecked();
+  });
+
+  it('restores checked state after reload', async () => {
+    const user = userEvent.setup();
+    seedOneTransfer();
+    const { unmount } = render(<SettlementTab />);
+    await user.click(
+      screen.getByRole('checkbox', {
+        name: 'Paid: Luis -> Ana $50.00',
+      }),
+    );
+    const stored = localStorage.getItem('split:v2');
+
+    unmount();
+    resetAppStore();
+    localStorage.setItem('split:v2', stored!);
+    await act(async () => {
+      await useAppStore.persist.rehydrate();
+    });
+    render(<SettlementTab />);
+
+    expect(
+      screen.getByRole('checkbox', { name: 'Paid: Luis -> Ana $50.00' }),
+    ).toBeChecked();
+    expect(screen.getByText('1 of 1 paid')).toBeInTheDocument();
+  });
+
+  it('recomputes progress when a paid transfer changes amount', async () => {
+    const user = userEvent.setup();
+    const [ana, luis] = seedOneTransfer();
+    render(<SettlementTab />);
+
+    await user.click(
+      screen.getByRole('checkbox', {
+        name: 'Paid: Luis -> Ana $50.00',
+      }),
+    );
+    act(() => {
+      state().updateExpense(selectExpenses(state())[0]!.id, {
+        concept: 'Dinner',
+        amount: '120.00',
+        payerId: ana,
+        splitMode: 'equal',
+        beneficiaryIds: [ana, luis],
+        customAmounts: {},
+        tipMode: 'none',
+        tipValue: '',
+        category: 'other',
+      });
+    });
+
+    expect(screen.getByText('0 of 1 paid')).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Paid: Luis -> Ana $60.00',
+      }),
+    ).not.toBeChecked();
   });
 });
 

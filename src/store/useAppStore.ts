@@ -12,6 +12,7 @@ import {
   findEvent,
   isEventEditable,
   migrateEventsCategories,
+  migrateEventsPaidTransfers,
   migrateLegacyGroupState,
   parseEventsState,
   renameEvent,
@@ -22,6 +23,11 @@ import {
 import { expensesTotal, validateExpense } from '../domain/expense';
 import { computeBalances } from '../domain/balance';
 import { computeTransfers } from '../domain/settle';
+import {
+  isTransferPaid,
+  isValidTransfer,
+  reconcilePaidTransfers,
+} from '../domain/paidTransfers';
 import { createId } from '../lib/ids';
 import { systemClock, type Clock } from '../lib/clock';
 import type {
@@ -38,8 +44,10 @@ import type {
 } from '../domain/types';
 
 export const STORAGE_KEY = 'split:v2';
-export const STORAGE_VERSION = 5;
+export const STORAGE_VERSION = 6;
 
+/** The event collection with expense categories but no payment checklist. */
+export const PRE_PAYMENT_STORAGE_VERSION = 5;
 /** The event collection that predates categories. */
 export const PRE_CATEGORY_STORAGE_VERSION = 4;
 
@@ -85,6 +93,7 @@ export interface AppState {
   addExpense: (draft: ExpenseDraft) => boolean;
   updateExpense: (id: string, draft: ExpenseDraft) => boolean;
   removeExpense: (id: string) => boolean;
+  toggleTransferPaid: (transfer: Transfer) => boolean;
   clearError: () => void;
 }
 
@@ -111,6 +120,18 @@ function isFailure(result: EventChange): result is { ok: false; error: AppError 
 
 function unwrapChange(result: EventChange): SplitEvent {
   return 'ok' in result ? (result as { ok: true; value: SplitEvent }).value : result;
+}
+
+function withReconciledPaidTransfers(event: SplitEvent): SplitEvent {
+  const plan = computeTransfers(computeBalances(event.participants, event.expenses));
+
+  return {
+    ...event,
+    paidTransfers: reconcilePaidTransfers(
+      event.paidTransfers,
+      plan.ok ? plan.value : [],
+    ),
+  };
 }
 
 export const useAppStore = create<AppState>()(
@@ -142,7 +163,14 @@ export const useAppStore = create<AppState>()(
           return false;
         }
 
-        set({ events: replaceEvent(events, unwrapChange(result)), lastError: null });
+        const changed = unwrapChange(result);
+        const updated =
+          changed.participants !== active.participants ||
+          changed.expenses !== active.expenses
+            ? withReconciledPaidTransfers(changed)
+            : changed;
+
+        set({ events: replaceEvent(events, updated), lastError: null });
         return true;
       }
 
@@ -243,6 +271,10 @@ export const useAppStore = create<AppState>()(
 
         removeParticipant: (id) =>
           updateActiveEvent((event) => {
+            if (!event.participants.some((participant) => participant.id === id)) {
+              return event;
+            }
+
             const result = removeParticipant(event.participants, id, event.expenses);
 
             if (!result.ok) {
@@ -291,10 +323,51 @@ export const useAppStore = create<AppState>()(
         },
 
         removeExpense: (id) =>
-          updateActiveEvent((event) => ({
-            ...touchEvent(event, clock()),
-            expenses: event.expenses.filter((expense) => expense.id !== id),
-          })),
+          updateActiveEvent((event) =>
+            event.expenses.some((expense) => expense.id === id)
+              ? {
+                  ...touchEvent(event, clock()),
+                  expenses: event.expenses.filter((expense) => expense.id !== id),
+                }
+              : event,
+          ),
+
+        toggleTransferPaid: (transfer) => {
+          const { events, activeEventId } = get();
+          const active = findEvent(events, activeEventId);
+
+          if (!active) {
+            set({ lastError: 'EVENT_NOT_FOUND' });
+            return false;
+          }
+
+          if (!isEventEditable(active)) {
+            set({ lastError: 'EVENT_ARCHIVED' });
+            return false;
+          }
+
+          if (!isValidTransfer(transfer)) {
+            return false;
+          }
+
+          const plan = computeTransfers(
+            computeBalances(active.participants, active.expenses),
+          );
+
+          if (!plan.ok || !isTransferPaid(transfer, plan.value)) {
+            return false;
+          }
+
+          const paidTransfers = isTransferPaid(transfer, active.paidTransfers)
+            ? active.paidTransfers.filter((paid) => !isTransferPaid(paid, [transfer]))
+            : [...active.paidTransfers, transfer];
+
+          set({
+            events: replaceEvent(events, { ...active, paidTransfers }),
+            lastError: null,
+          });
+          return true;
+        },
 
         clearError: () => set({ lastError: null }),
       };
@@ -308,15 +381,18 @@ export const useAppStore = create<AppState>()(
         lastActiveEventId: state.lastActiveEventId,
       }),
       /**
-       * The only supported predecessor is the single-group schema, whose data
-       * is wrapped into one event. Anything older or unrecognized carries no
-       * trustworthy shape, so it starts empty.
+       * Recognized predecessors are normalized before strict merge parsing.
+       * Anything older or unrecognized carries no trustworthy shape.
        */
       migrate: (persisted, version) => {
         // Each recognized predecessor is normalized to the current shape and
         // then re-validated by `merge`; anything else starts empty.
         if (version === PRE_CATEGORY_STORAGE_VERSION) {
-          return migrateEventsCategories(persisted);
+          return migrateEventsPaidTransfers(migrateEventsCategories(persisted));
+        }
+
+        if (version === PRE_PAYMENT_STORAGE_VERSION) {
+          return migrateEventsPaidTransfers(persisted);
         }
 
         if (version === LEGACY_STORAGE_VERSION) {
@@ -377,6 +453,10 @@ export function selectIsActiveEventEditable(state: AppState): boolean {
   const active = selectActiveEvent(state);
 
   return active ? isEventEditable(active) : false;
+}
+
+export function selectPaidTransfers(state: AppState): Transfer[] {
+  return selectActiveEvent(state)?.paidTransfers ?? [];
 }
 
 export function selectCanRemoveParticipant(
