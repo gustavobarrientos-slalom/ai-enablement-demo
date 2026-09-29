@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   selectExpenses,
   selectIsActiveEventEditable,
+  selectActiveEvent,
   selectPaidTransfers,
   selectParticipants,
   useAppStore,
@@ -27,11 +28,14 @@ import {
 import { CATEGORY_ICONS, faCircleCheck, faTriangleExclamation } from '../ui/icons';
 
 export function SettlementTab() {
+  const activeEvent = useAppStore(selectActiveEvent);
   const participants = useAppStore(selectParticipants);
   const expenses = useAppStore(selectExpenses);
   const paidTransfers = useAppStore(selectPaidTransfers);
   const isEditable = useAppStore(selectIsActiveEventEditable);
   const toggleTransferPaid = useAppStore((state) => state.toggleTransferPaid);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Derived during render rather than in a selector: these build new arrays
   // every call, which would loop useSyncExternalStore forever.
@@ -49,10 +53,47 @@ export function SettlementTab() {
     return participants.find((participant) => participant.id === id)?.name ?? '';
   }
 
+  async function exportPdf(): Promise<void> {
+    if (!activeEvent || expenses.length === 0 || isExporting) {
+      return;
+    }
+
+    setIsExporting(true);
+    setExportError(null);
+
+    try {
+      const { downloadSettlementPdf } = await import('../pdf/downloadSettlementPdf');
+      await downloadSettlementPdf(activeEvent);
+    } catch (error) {
+      setExportError(
+        error instanceof Error
+          ? `PDF export failed: ${error.message}`
+          : 'PDF export failed because of an unknown error.',
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-slate-700">Balances</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-700">Balances</h2>
+          <button
+            type="button"
+            onClick={exportPdf}
+            disabled={expenses.length === 0 || isExporting}
+            className="min-h-11 rounded-lg bg-slate-900 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isExporting ? 'Exporting…' : 'Export PDF'}
+          </button>
+        </div>
+        {exportError && (
+          <p role="alert" className="text-sm text-red-600">
+            {exportError}
+          </p>
+        )}
 
         {participants.length === 0 ? (
           <p className="text-sm text-slate-500">No participants yet.</p>

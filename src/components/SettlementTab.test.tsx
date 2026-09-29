@@ -80,6 +80,23 @@ describe('settled up state', () => {
   });
 });
 
+describe('PDF export controls', () => {
+  it('disables export when the event has no expenses', () => {
+    seed(['Ana', 'Luis']);
+    render(<SettlementTab />);
+
+    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeDisabled();
+  });
+
+  it('enables export when the event has expenses', () => {
+    const [ana, luis] = seed(['Ana', 'Luis']);
+    addEqual('Dinner', '100.00', ana!, [ana!, luis!]);
+    render(<SettlementTab />);
+
+    expect(screen.getByRole('button', { name: 'Export PDF' })).toBeEnabled();
+  });
+});
+
 describe('balance table', () => {
   it('lists participants in insertion order', () => {
     seed(['Ana', 'Luis', 'Carla']);
