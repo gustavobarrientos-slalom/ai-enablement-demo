@@ -26,7 +26,7 @@ import type {
 } from '../domain/types';
 
 export const STORAGE_KEY = 'split:v2';
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 
 export interface AppState extends GroupState {
   lastError: AppError | null;
@@ -139,8 +139,11 @@ export const useAppStore = create<AppState>()(
         participants: state.participants,
         expenses: state.expenses,
       }),
-      // Unknown versions carry no trustworthy shape, so start empty.
-      migrate: () => createEmptyGroupState(),
+      // Version 2 differs only by the absent optional tip, which
+      // `parseGroupState` normalizes to null, so it is safe to pass through.
+      // Every other version carries no trustworthy shape, so start empty.
+      migrate: (persisted, version) =>
+        version === STORAGE_VERSION - 1 ? persisted : createEmptyGroupState(),
       merge: (persisted, current) => {
         const parsed = parseGroupState(persisted);
 

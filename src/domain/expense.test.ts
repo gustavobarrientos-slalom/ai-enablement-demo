@@ -4,6 +4,8 @@ import {
   centsToInput,
   createEmptyDraft,
   draftFromExpense,
+  expenseShares,
+  expenseTotalCents,
   expensesTotal,
   isExpenseConsistent,
   validateExpense,
@@ -23,6 +25,8 @@ function draft(overrides: Partial<ExpenseDraft> = {}): ExpenseDraft {
     splitMode: 'equal',
     beneficiaryIds: [ana.id, luis.id, carla.id],
     customAmounts: {},
+    tipMode: 'none' as const,
+    tipValue: '',
     ...overrides,
   };
 }
@@ -44,6 +48,7 @@ describe('validateExpense', () => {
           { participantId: luis.id, amountCents: 8333 },
           { participantId: carla.id, amountCents: 8333 },
         ],
+        tip: null,
       },
     });
   });
@@ -167,6 +172,7 @@ describe('expensesTotal', () => {
       payerId: ana.id,
       splitMode: 'custom',
       shares: [{ participantId: ana.id, amountCents }],
+      tip: null,
     };
   }
 
@@ -192,6 +198,8 @@ describe('drafts', () => {
       splitMode: 'equal',
       beneficiaryIds: [],
       customAmounts: {},
+      tipMode: 'none' as const,
+      tipValue: '',
     });
   });
 
@@ -217,6 +225,8 @@ describe('drafts', () => {
         [luis.id]: '83.33',
         [carla.id]: '83.33',
       },
+      tipMode: 'none' as const,
+      tipValue: '',
     });
 
     const revalidated = validateExpense(editable, participants, 'e1');
@@ -232,5 +242,207 @@ describe('drafts', () => {
     [8334, '83.34'],
   ])('renders %i cents as %s', (cents, expected) => {
     expect(centsToInput(cents)).toBe(expected);
+  });
+});
+
+describe('expense tip', () => {
+  function tipped(overrides: Partial<ExpenseDraft>) {
+    const result = validateExpense(draft(overrides), participants, 'e1');
+
+    if (!result.ok) {
+      throw new Error(`expected a valid expense, got ${result.error}`);
+    }
+
+    return result.value;
+  }
+
+  it('saves an expense with no tip when the tip is left empty', () => {
+    const expense = tipped({ amount: '100.00' });
+
+    expect(expense.tip).toBeNull();
+    expect(expenseTotalCents(expense)).toBe(10000);
+  });
+
+  it('converts a percentage tip to cents', () => {
+    const expense = tipped({ amount: '250.00', tipMode: 'percent', tipValue: '10' });
+
+    expect(expense.tip).toEqual({ kind: 'percent', percent: 10, amountCents: 2500 });
+    expect(expenseTotalCents(expense)).toBe(27500);
+  });
+
+  it('floors a percentage tip to whole cents', () => {
+    const expense = tipped({ amount: '100.01', tipMode: 'percent', tipValue: '15' });
+
+    // 15% of 10001 cents is 1500.15 cents.
+    expect(expense.tip?.amountCents).toBe(1500);
+  });
+
+  it('accepts a fixed tip', () => {
+    const expense = tipped({ amount: '100.00', tipMode: 'fixed', tipValue: '10.00' });
+
+    expect(expense.tip).toEqual({ kind: 'fixed', amountCents: 1000 });
+    expect(expenseTotalCents(expense)).toBe(11000);
+  });
+
+  it('accepts a zero percent tip', () => {
+    const expense = tipped({ amount: '100.00', tipMode: 'percent', tipValue: '0' });
+
+    expect(expense.tip?.amountCents).toBe(0);
+    expect(expenseTotalCents(expense)).toBe(10000);
+  });
+
+  it.each([
+    ['a negative percentage', { tipMode: 'percent' as const, tipValue: '-5' }, 'NEGATIVE_TIP'],
+    ['a negative fixed tip', { tipMode: 'fixed' as const, tipValue: '-10.00' }, 'NEGATIVE_TIP'],
+    [
+      'a percentage above 100',
+      { tipMode: 'percent' as const, tipValue: '101' },
+      'TIP_PERCENT_OUT_OF_RANGE',
+    ],
+    [
+      'a fractional percentage',
+      { tipMode: 'percent' as const, tipValue: '12.5' },
+      'TIP_PERCENT_NOT_INTEGER',
+    ],
+    [
+      'a fixed tip with three decimals',
+      { tipMode: 'fixed' as const, tipValue: '10.999' },
+      'TIP_TOO_MANY_DECIMALS',
+    ],
+  ])('rejects %s', (_label, overrides, expected) => {
+    expect(validateExpense(draft(overrides), participants, 'e1')).toEqual({
+      ok: false,
+      error: expected,
+    });
+  });
+
+  it('stores base shares that still sum to the base amount', () => {
+    const expense = tipped({ amount: '250.00', tipMode: 'percent', tipValue: '10' });
+
+    expect(expense.shares.map((share) => share.amountCents)).toEqual([8334, 8333, 8333]);
+    expect(
+      expense.shares.reduce((sum, share) => sum + share.amountCents, 0),
+    ).toBe(expense.amountCents);
+  });
+
+  it('derives tip inclusive shares that sum to the total', () => {
+    const expense = tipped({ amount: '250.00', tipMode: 'percent', tipValue: '10' });
+
+    expect(expenseShares(expense).map((share) => share.amountCents)).toEqual([
+      9168, 9166, 9166,
+    ]);
+    expect(
+      expenseShares(expense).reduce((sum, share) => sum + share.amountCents, 0),
+    ).toBe(expenseTotalCents(expense));
+  });
+
+  it('derives 36.68 / 36.66 / 36.66 for 100.00 with a fixed 10.00 tip', () => {
+    const expense = tipped({ amount: '100.00', tipMode: 'fixed', tipValue: '10.00' });
+
+    expect(expenseShares(expense).map((share) => share.amountCents)).toEqual([
+      3668, 3666, 3666,
+    ]);
+    expect(
+      expenseShares(expense).reduce((sum, share) => sum + share.amountCents, 0),
+    ).toBe(11000);
+  });
+
+  it('distributes the tip proportionally over a custom split', () => {
+    const expense = tipped({
+      amount: '600.00',
+      splitMode: 'custom',
+      beneficiaryIds: [ana.id, luis.id, carla.id],
+      customAmounts: { [ana.id]: '300.00', [luis.id]: '200.00', [carla.id]: '100.00' },
+      tipMode: 'percent',
+      tipValue: '10',
+    });
+
+    expect(expenseShares(expense).map((share) => share.amountCents)).toEqual([
+      33000, 22000, 11000,
+    ]);
+  });
+
+  it('gives no tip to a beneficiary who consumed nothing', () => {
+    const expense = tipped({
+      amount: '100.00',
+      splitMode: 'custom',
+      beneficiaryIds: [ana.id, luis.id, carla.id],
+      customAmounts: { [ana.id]: '50.00', [luis.id]: '0.00', [carla.id]: '50.00' },
+      tipMode: 'fixed',
+      tipValue: '10.00',
+    });
+
+    const shares = expenseShares(expense);
+
+    expect(shares[1]).toEqual({ participantId: luis.id, amountCents: 0 });
+    expect(shares.map((share) => share.amountCents)).toEqual([5500, 0, 5500]);
+  });
+
+  it('keeps a tipped expense consistent', () => {
+    expect(
+      isExpenseConsistent(tipped({ amount: '250.00', tipMode: 'percent', tipValue: '10' })),
+    ).toBe(true);
+  });
+
+  it('includes tips in the group total', () => {
+    const withTip = tipped({ amount: '100.00', tipMode: 'percent', tipValue: '10' });
+    const plain = { ...tipped({ amount: '50.00' }), id: 'e2' };
+
+    expect(expensesTotal([withTip, plain])).toBe(16000);
+  });
+
+  it('round trips a tipped equal split through the form', () => {
+    const original = tipped({ amount: '250.00', tipMode: 'percent', tipValue: '10' });
+    const reopened = validateExpense(draftFromExpense(original), participants, 'e1');
+
+    expect(reopened).toEqual({ ok: true, value: original });
+  });
+
+  it('round trips a tipped custom split through the form', () => {
+    const original = tipped({
+      amount: '600.00',
+      splitMode: 'custom',
+      beneficiaryIds: [ana.id, luis.id, carla.id],
+      customAmounts: { [ana.id]: '300.00', [luis.id]: '200.00', [carla.id]: '100.00' },
+      tipMode: 'percent',
+      tipValue: '10',
+    });
+
+    // Regression: storing tip inclusive shares made this fail SHARES_DO_NOT_SUM.
+    expect(validateExpense(draftFromExpense(original), participants, 'e1')).toEqual({
+      ok: true,
+      value: original,
+    });
+  });
+
+  it('recomputes a percentage tip when the amount is edited', () => {
+    const original = tipped({ amount: '100.00', tipMode: 'percent', tipValue: '10' });
+    const edited = validateExpense(
+      { ...draftFromExpense(original), amount: '200.00' },
+      participants,
+      'e1',
+    );
+
+    expect(edited.ok && edited.value.tip).toEqual({
+      kind: 'percent',
+      percent: 10,
+      amountCents: 2000,
+    });
+  });
+
+  it('clears the tip when the mode goes back to none', () => {
+    const original = tipped({ amount: '100.00', tipMode: 'percent', tipValue: '10' });
+    const cleared = validateExpense(
+      { ...draftFromExpense(original), tipMode: 'none' },
+      participants,
+      'e1',
+    );
+
+    expect(cleared.ok && cleared.value.tip).toBeNull();
+  });
+
+  it('starts an empty draft with no tip', () => {
+    expect(createEmptyDraft(ana.id).tipMode).toBe('none');
+    expect(createEmptyDraft(ana.id).tipValue).toBe('');
   });
 });

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { computeBalances, netsSum } from './balance';
-import { validateExpense } from './expense';
+import {
+  expenseShares,
+  expenseTotalCents,
+  isExpenseConsistent,
+  validateExpense,
+} from './expense';
 import { computeTransfers, maxTransfers } from './settle';
 import type { Expense, ExpenseDraft, Participant, Transfer } from './types';
 
@@ -28,13 +33,26 @@ function build(id: string, draft: ExpenseDraft): Expense {
   return result.value;
 }
 
-const dinner = build('e1', {
+const dinnerDraft = {
   concept: 'Dinner',
   amount: '1000.00',
   payerId: ana.id,
-  splitMode: 'equal',
+  splitMode: 'equal' as const,
   beneficiaryIds: everyone,
   customAmounts: {},
+};
+
+const dinner = build('e1', {
+  ...dinnerDraft,
+  tipMode: 'percent' as const,
+  tipValue: '10',
+});
+
+/** The same dinner with no tip, so the tip is provably the only difference. */
+const dinnerWithoutTip = build('e1', {
+  ...dinnerDraft,
+  tipMode: 'none' as const,
+  tipValue: '',
 });
 
 const uber = build('e2', {
@@ -44,6 +62,8 @@ const uber = build('e2', {
   splitMode: 'equal',
   beneficiaryIds: [ana.id, luis.id, carla.id],
   customAmounts: {},
+  tipMode: 'none' as const,
+  tipValue: '',
 });
 
 const drinks = build('e3', {
@@ -57,6 +77,8 @@ const drinks = build('e3', {
     [diana.id]: '200.00',
     [carla.id]: '100.00',
   },
+  tipMode: 'none' as const,
+  tipValue: '',
 });
 
 const dessert = build('e4', {
@@ -66,6 +88,8 @@ const dessert = build('e4', {
   splitMode: 'equal',
   beneficiaryIds: everyone,
   customAmounts: {},
+  tipMode: 'none' as const,
+  tipValue: '',
 });
 
 const expenses = [dinner, uber, drinks, dessert];
@@ -120,10 +144,27 @@ describe('golden scenario expenses', () => {
 
   it('keeps every expense internally consistent', () => {
     for (const expense of expenses) {
-      const total = expense.shares.reduce((sum, share) => sum + share.amountCents, 0);
+      const base = expense.shares.reduce((sum, share) => sum + share.amountCents, 0);
+      const derived = expenseShares(expense).reduce(
+        (sum, share) => sum + share.amountCents,
+        0,
+      );
 
-      expect(total).toBe(expense.amountCents);
+      expect(base).toBe(expense.amountCents);
+      expect(derived).toBe(expenseTotalCents(expense));
+      expect(isExpenseConsistent(expense)).toBe(true);
     }
+  });
+
+  it('adds a 10 percent tip to the dinner', () => {
+    expect(dinner.tip).toEqual({ kind: 'percent', percent: 10, amountCents: 10000 });
+    expect(expenseTotalCents(dinner)).toBe(110000);
+  });
+
+  it('spreads the dinner tip evenly across the five participants', () => {
+    expect(expenseShares(dinner).map((share) => share.amountCents)).toEqual([
+      22000, 22000, 22000, 22000, 22000,
+    ]);
   });
 });
 
@@ -131,11 +172,11 @@ describe('golden scenario balances', () => {
   const balances = computeBalances(participants, expenses);
 
   it.each([
-    ['Ana', ana.id, 69665],
-    ['Luis', luis.id, -5333],
-    ['Carla', carla.id, 19667],
-    ['Beto', beto.id, -41999],
-    ['Diana', diana.id, -42000],
+    ['Ana', ana.id, 77665],
+    ['Luis', luis.id, -7333],
+    ['Carla', carla.id, 17667],
+    ['Beto', beto.id, -43999],
+    ['Diana', diana.id, -44000],
   ])('gives %s a net of %i cents', (_name, id, expected) => {
     const balance = balances.find((entry) => entry.participantId === id)!;
 
@@ -148,8 +189,22 @@ describe('golden scenario balances', () => {
 
   it('reports the amounts each participant paid', () => {
     expect(balances.map((balance) => balance.paidCents)).toEqual([
-      100000, 25000, 60000, 10001, 0,
+      110000, 25000, 60000, 10001, 0,
     ]);
+  });
+
+  it('matches the pre tip nets when the dinner tip is removed', () => {
+    const untipped = computeBalances(participants, [
+      dinnerWithoutTip,
+      uber,
+      drinks,
+      dessert,
+    ]);
+
+    expect(untipped.map((balance) => balance.netCents)).toEqual([
+      69665, -5333, 19667, -41999, -42000,
+    ]);
+    expect(netsSum(untipped)).toBe(0);
   });
 });
 
@@ -163,10 +218,10 @@ describe('golden scenario transfers', () => {
 
   it('matches the expected transfers in order', () => {
     expect(result.ok && named(result.value)).toEqual([
-      'Diana -> Ana 42000',
-      'Beto -> Ana 27665',
-      'Beto -> Carla 14334',
-      'Luis -> Carla 5333',
+      'Diana -> Ana 44000',
+      'Beto -> Ana 33665',
+      'Beto -> Carla 10334',
+      'Luis -> Carla 7333',
     ]);
   });
 

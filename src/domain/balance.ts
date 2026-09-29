@@ -1,3 +1,4 @@
+import { expenseShares, expenseTotalCents } from './expense';
 import type { Balance, Expense, Participant } from './types';
 
 /**
@@ -18,11 +19,12 @@ export function computeBalances(
   }
 
   for (const expense of expenses) {
+    // Both sides must use the tip inclusive view, or tips break the zero sum.
     if (paid.has(expense.payerId)) {
-      paid.set(expense.payerId, paid.get(expense.payerId)! + expense.amountCents);
+      paid.set(expense.payerId, paid.get(expense.payerId)! + expenseTotalCents(expense));
     }
 
-    for (const share of expense.shares) {
+    for (const share of expenseShares(expense)) {
       if (consumed.has(share.participantId)) {
         consumed.set(
           share.participantId,

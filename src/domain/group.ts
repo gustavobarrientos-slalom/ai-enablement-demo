@@ -7,6 +7,7 @@ import {
   type Result,
   type Share,
   type SplitMode,
+  type Tip,
 } from './types';
 
 export const DEFAULT_EVENT_NAME = 'New Event';
@@ -147,13 +148,46 @@ function isShare(value: unknown, participantIds: ReadonlySet<string>): value is 
   );
 }
 
+function isTip(value: unknown): value is Tip {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if (
+    typeof candidate.amountCents !== 'number' ||
+    !Number.isSafeInteger(candidate.amountCents) ||
+    candidate.amountCents < 0
+  ) {
+    return false;
+  }
+
+  if (candidate.kind === 'fixed') {
+    return true;
+  }
+
+  return (
+    candidate.kind === 'percent' &&
+    typeof candidate.percent === 'number' &&
+    Number.isSafeInteger(candidate.percent) &&
+    candidate.percent >= 0 &&
+    candidate.percent <= 100
+  );
+}
+
 function isExpense(value: unknown, participantIds: ReadonlySet<string>): value is Expense {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
 
   const candidate = value as Record<string, unknown>;
-  const { id, concept, amountCents, payerId, splitMode, shares } = candidate;
+  const { id, concept, amountCents, payerId, splitMode, shares, tip } = candidate;
+
+  // Absent means an expense saved before tips existed.
+  if (tip !== undefined && tip !== null && !isTip(tip)) {
+    return false;
+  }
 
   if (typeof id !== 'string' || id.length === 0) {
     return false;
@@ -260,6 +294,7 @@ export function parseGroupState(value: unknown): GroupState | null {
       payerId: expense.payerId,
       splitMode: expense.splitMode as SplitMode,
       shares: expense.shares.map((share) => ({ ...share })),
+      tip: expense.tip ?? null,
     })),
   };
 }

@@ -1,4 +1,4 @@
-import type { Expense, Share } from '../domain/types';
+import type { Expense, Share, Tip } from '../domain/types';
 
 interface ExpenseOverrides {
   id?: string;
@@ -7,6 +7,7 @@ interface ExpenseOverrides {
   payerId: string;
   beneficiaryIds?: string[];
   shares?: Share[];
+  tip?: Tip | null;
 }
 
 /**
@@ -20,13 +21,14 @@ export function makeExpense(overrides: ExpenseOverrides): Expense {
     payerId,
     beneficiaryIds = [],
     shares,
+    tip = null,
   } = overrides;
 
   if (shares) {
     const amountCents =
       overrides.amountCents ?? shares.reduce((sum, share) => sum + share.amountCents, 0);
 
-    return { id, concept, amountCents, payerId, splitMode: 'custom', shares };
+    return { id, concept, amountCents, payerId, splitMode: 'custom', shares, tip };
   }
 
   const amountCents = overrides.amountCents ?? 10000;
@@ -40,6 +42,7 @@ export function makeExpense(overrides: ExpenseOverrides): Expense {
       payerId,
       splitMode: 'custom',
       shares: [{ participantId: payerId, amountCents }],
+      tip,
     };
   }
 
@@ -56,5 +59,6 @@ export function makeExpense(overrides: ExpenseOverrides): Expense {
       participantId,
       amountCents: base + (index < remainder ? 1 : 0),
     })),
+    tip,
   };
 }

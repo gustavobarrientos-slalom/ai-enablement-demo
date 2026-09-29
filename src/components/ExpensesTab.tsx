@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { selectExpensesTotal, useAppStore } from '../store/useAppStore';
-import { draftFromExpense } from '../domain/expense';
+import { draftFromExpense, expenseTotalCents } from '../domain/expense';
 import type { AppError, ExpenseDraft } from '../domain/types';
 import { formatCents } from '../ui/currency';
-import { NO_EXPENSES_MESSAGE } from '../ui/messages';
-import { faPen, faReceipt, faTrash } from '../ui/icons';
+import { NO_EXPENSES_MESSAGE, tipLabel } from '../ui/messages';
+import { faCoins, faPen, faReceipt, faTrash } from '../ui/icons';
 import { ExpenseForm } from './ExpenseForm';
 
 export function ExpensesTab() {
@@ -84,10 +84,19 @@ export function ExpensesTab() {
                         {expense.shares.length}{' '}
                         {expense.shares.length === 1 ? 'beneficiary' : 'beneficiaries'}
                       </p>
+                      {expense.tip && expense.tip.amountCents > 0 && (
+                        <p
+                          className="truncate text-xs text-slate-500"
+                          data-testid={`tip-${expense.id}`}
+                        >
+                          <FontAwesomeIcon icon={faCoins} className="mr-1" />
+                          {tipLabel(expense.tip.amountCents)}
+                        </p>
+                      )}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <span className="text-base font-semibold">
-                        {formatCents(expense.amountCents)}
+                        {formatCents(expenseTotalCents(expense))}
                       </span>
                       <button
                         type="button"

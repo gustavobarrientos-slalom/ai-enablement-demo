@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCustomShares,
   buildShares,
+  distributeProportionally,
   sharesTotal,
   splitDifference,
   splitEqually,
@@ -208,5 +209,64 @@ describe('buildShares', () => {
         participants,
       ),
     ).toEqual({ ok: false, error: 'SHARES_DO_NOT_SUM' });
+  });
+});
+
+describe('distributeProportionally', () => {
+  it('distributes in proportion to consumption on a custom split', () => {
+    // Drinks 600.00 split 300/200/100 with a 10% tip.
+    expect(distributeProportionally(6000, [30000, 20000, 10000])).toEqual([
+      3000, 2000, 1000,
+    ]);
+  });
+
+  it('degenerates to an equal division when weights are equal', () => {
+    expect(distributeProportionally(10000, [20000, 20000, 20000, 20000, 20000])).toEqual([
+      2000, 2000, 2000, 2000, 2000,
+    ]);
+  });
+
+  it('hands leftover cents out by largest remainder', () => {
+    // 250.00 equally three ways gives base shares 8334/8333/8333.
+    expect(distributeProportionally(2500, [8334, 8333, 8333])).toEqual([834, 833, 833]);
+  });
+
+  it('gives nothing to a beneficiary who consumed nothing', () => {
+    expect(distributeProportionally(1000, [5000, 0, 5000])).toEqual([500, 0, 500]);
+  });
+
+  it('breaks remainder ties by index order', () => {
+    // Three equal weights over 2 cents: the first two get the leftovers.
+    expect(distributeProportionally(2, [100, 100, 100])).toEqual([1, 1, 0]);
+  });
+
+  it('returns zeros when every weight is zero rather than dividing by zero', () => {
+    expect(distributeProportionally(1000, [0, 0, 0])).toEqual([0, 0, 0]);
+  });
+
+  it('returns zeros for a zero total', () => {
+    expect(distributeProportionally(0, [100, 200])).toEqual([0, 0]);
+  });
+
+  it('returns an empty list for no weights', () => {
+    expect(distributeProportionally(1000, [])).toEqual([]);
+  });
+
+  it('always sums exactly to the total', () => {
+    const cases: Array<[number, number[]]> = [
+      [1, [1, 1, 1]],
+      [7, [3, 5, 11]],
+      [2500, [8334, 8333, 8333]],
+      [99, [1, 2, 3, 4, 5, 6, 7]],
+      [10000, [1]],
+      [333, [7, 7, 7, 7, 7, 7]],
+    ];
+
+    for (const [total, weights] of cases) {
+      const parts = distributeProportionally(total, weights);
+
+      expect(parts.reduce((sum, part) => sum + part, 0)).toBe(total);
+      expect(parts.every((part) => part >= 0)).toBe(true);
+    }
   });
 });

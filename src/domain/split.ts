@@ -84,6 +84,49 @@ export function buildCustomShares(
   return ok(shares);
 }
 
+/**
+ * Distributes `totalCents` across `weights` in proportion to each weight.
+ *
+ * Each part is the floor of its exact proportional value, and the leftover
+ * cents are handed out one each by largest fractional remainder, breaking ties
+ * by index so the result is deterministic. Parts always sum exactly to the
+ * total. Used to spread a tip across beneficiaries by what each consumed.
+ *
+ * Remainders are compared as integer numerators (`totalCents * weight % sum`)
+ * rather than as fractions, so no floating-point value touches money.
+ */
+export function distributeProportionally(
+  totalCents: number,
+  weights: readonly number[],
+): number[] {
+  if (weights.length === 0) {
+    return [];
+  }
+
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+
+  // Nothing consumed means nothing to be proportional to.
+  if (weightSum <= 0 || totalCents === 0) {
+    return weights.map(() => 0);
+  }
+
+  const parts = weights.map((weight) => Math.floor((totalCents * weight) / weightSum));
+  const remainders = weights.map((weight) => (totalCents * weight) % weightSum);
+  const assigned = parts.reduce((sum, part) => sum + part, 0);
+
+  const ranked = weights
+    .map((_, index) => index)
+    .sort((a, b) => remainders[b]! - remainders[a]! || a - b);
+
+  for (let index = 0; index < totalCents - assigned; index += 1) {
+    const target = ranked[index]!;
+
+    parts[target] = parts[target]! + 1;
+  }
+
+  return parts;
+}
+
 export function sharesTotal(shares: readonly Share[]): number {
   return shares.reduce((total, share) => total + share.amountCents, 0);
 }

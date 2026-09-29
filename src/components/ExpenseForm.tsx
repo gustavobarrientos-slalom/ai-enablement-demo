@@ -1,9 +1,16 @@
 import { useId, useMemo, useState, type FormEvent } from 'react';
 import { CONCEPT_MAX_LENGTH, createEmptyDraft } from '../domain/expense';
-import { parseAmountToCents } from '../domain/money';
+import { parseAmountToCents, parseTipFixed, parseTipPercent, tipCentsFromPercent } from '../domain/money';
 import { buildCustomShares, splitDifference } from '../domain/split';
 import type { AppError, ExpenseDraft, Participant } from '../domain/types';
-import { ERROR_MESSAGES, splitDifferenceLabel } from '../ui/messages';
+import { formatCents } from '../ui/currency';
+import {
+  ERROR_MESSAGES,
+  TIP_LABEL,
+  TIP_MODE_LABELS,
+  splitDifferenceLabel,
+  tipLabel,
+} from '../ui/messages';
 
 interface ExpenseFormProps {
   participants: readonly Participant[];
@@ -43,6 +50,40 @@ function useCustomDifference(
   }, [draft, participants]);
 }
 
+/** Live preview of the resolved tip and the resulting total. */
+function useTipPreview(draft: ExpenseDraft): string | null {
+  return useMemo(() => {
+    if (draft.tipMode === 'none') {
+      return null;
+    }
+
+    const amount = parseAmountToCents(draft.amount);
+
+    if (!amount.ok) {
+      return null;
+    }
+
+    const tipCents =
+      draft.tipMode === 'percent'
+        ? (() => {
+            const percent = parseTipPercent(draft.tipValue);
+
+            return percent.ok ? tipCentsFromPercent(amount.value, percent.value) : null;
+          })()
+        : (() => {
+            const fixed = parseTipFixed(draft.tipValue);
+
+            return fixed.ok ? fixed.value : null;
+          })();
+
+    if (tipCents === null) {
+      return null;
+    }
+
+    return `${tipLabel(tipCents)} — total ${formatCents(amount.value + tipCents)}`;
+  }, [draft]);
+}
+
 export function ExpenseForm({
   participants,
   initialDraft,
@@ -59,6 +100,7 @@ export function ExpenseForm({
   const formId = useId();
 
   const difference = useCustomDifference(draft, participants);
+  const tipPreview = useTipPreview(draft);
   const differenceLabel = difference === null ? null : splitDifferenceLabel(difference);
   const unbalanced = difference !== null && difference !== 0;
 
@@ -126,6 +168,55 @@ export function ExpenseForm({
           className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
         />
       </div>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-semibold text-slate-700">{TIP_LABEL}</legend>
+
+        <div className="flex gap-2" role="radiogroup" aria-label={TIP_LABEL}>
+          {(['none', 'percent', 'fixed'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={draft.tipMode === mode}
+              onClick={() => update({ tipMode: mode })}
+              className={[
+                'min-h-11 flex-1 rounded-lg border px-2 text-sm',
+                draft.tipMode === mode
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-300 bg-white text-slate-700',
+              ].join(' ')}
+            >
+              {TIP_MODE_LABELS[mode]}
+            </button>
+          ))}
+        </div>
+
+        {draft.tipMode !== 'none' && (
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor={`${formId}-tip`}
+              className="text-sm font-semibold text-slate-700"
+            >
+              {draft.tipMode === 'percent' ? 'Tip percentage' : 'Tip amount'}
+            </label>
+            <input
+              id={`${formId}-tip`}
+              type="text"
+              inputMode="decimal"
+              value={draft.tipValue}
+              placeholder={draft.tipMode === 'percent' ? '10' : '0.00'}
+              onChange={(event) => update({ tipValue: event.target.value })}
+              className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+            />
+            {tipPreview && (
+              <p className="text-sm text-slate-600" data-testid="tip-preview">
+                {tipPreview}
+              </p>
+            )}
+          </div>
+        )}
+      </fieldset>
 
       <div className="flex flex-col gap-1">
         <label htmlFor={`${formId}-payer`} className="text-sm font-semibold text-slate-700">

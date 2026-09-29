@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { areNetsBalanced, computeBalances, isSettledUp, netsSum } from './balance';
 import { validateExpense } from './expense';
-import type { Expense, Participant } from './types';
+import type { Expense, ExpenseDraft, Participant } from './types';
 
 const ana: Participant = { id: '1', name: 'Ana' };
 const luis: Participant = { id: '2', name: 'Luis' };
@@ -22,6 +22,8 @@ function expense(
       splitMode: 'equal',
       beneficiaryIds,
       customAmounts: {},
+      tipMode: 'none' as const,
+      tipValue: '',
     },
     participants,
     concept,
@@ -116,6 +118,7 @@ describe('computeBalances', () => {
       payerId: 'missing',
       splitMode: 'custom',
       shares: [{ participantId: 'missing', amountCents: 5000 }],
+      tip: null,
     };
 
     const balances = computeBalances(participants, [ghost]);
@@ -181,5 +184,91 @@ describe('isSettledUp', () => {
     ]);
 
     expect(isSettledUp(balances)).toBe(false);
+  });
+});
+
+describe('balances with tips', () => {
+  function tippedExpense(overrides: Partial<ExpenseDraft>): Expense {
+    const result = validateExpense(
+      {
+        concept: 'Dinner',
+        amount: '100.00',
+        payerId: ana.id,
+        splitMode: 'equal',
+        beneficiaryIds: [ana.id, luis.id],
+        customAmounts: {},
+        tipMode: 'none',
+        tipValue: '',
+        ...overrides,
+      },
+      participants,
+      String(overrides.concept ?? 'Dinner'),
+    );
+
+    if (!result.ok) {
+      throw new Error(`expected a valid expense, got ${result.error}`);
+    }
+
+    return result.value;
+  }
+
+  it('credits the payer the tip inclusive total', () => {
+    const balances = computeBalances(participants, [
+      tippedExpense({ tipMode: 'percent', tipValue: '10' }),
+    ]);
+
+    expect(balances[0]).toEqual({
+      participantId: ana.id,
+      paidCents: 11000,
+      consumedCents: 5500,
+      netCents: 5500,
+    });
+    expect(netFor(balances, luis.id)).toBe(-5500);
+  });
+
+  it('charges each beneficiary their part of the tip', () => {
+    const balances = computeBalances(participants, [
+      tippedExpense({
+        amount: '600.00',
+        splitMode: 'custom',
+        beneficiaryIds: [ana.id, luis.id, carla.id],
+        customAmounts: { [ana.id]: '300.00', [luis.id]: '200.00', [carla.id]: '100.00' },
+        tipMode: 'percent',
+        tipValue: '10',
+      }),
+    ]);
+
+    expect(balances.map((balance) => balance.consumedCents)).toEqual([33000, 22000, 11000]);
+  });
+
+  it('keeps nets summing to zero across mixed tipped and untipped expenses', () => {
+    // The guard against a call site that still treats amountCents as the total.
+    const expenses = [
+      tippedExpense({ concept: 'a', tipMode: 'percent', tipValue: '10' }),
+      tippedExpense({ concept: 'b', amount: '100.01', tipMode: 'percent', tipValue: '15' }),
+      tippedExpense({ concept: 'c', payerId: luis.id, tipMode: 'fixed', tipValue: '7.77' }),
+      tippedExpense({ concept: 'd', payerId: carla.id }),
+      tippedExpense({
+        concept: 'e',
+        amount: '33.33',
+        payerId: carla.id,
+        splitMode: 'custom',
+        beneficiaryIds: [ana.id, luis.id],
+        customAmounts: { [ana.id]: '11.11', [luis.id]: '22.22' },
+        tipMode: 'percent',
+        tipValue: '13',
+      }),
+    ];
+
+    expect(netsSum(computeBalances(participants, expenses))).toBe(0);
+    expect(areNetsBalanced(computeBalances(participants, expenses))).toBe(true);
+  });
+
+  it('stays settled up when a tipped expense is self funded', () => {
+    const balances = computeBalances(participants, [
+      tippedExpense({ beneficiaryIds: [ana.id], tipMode: 'percent', tipValue: '20' }),
+    ]);
+
+    expect(isSettledUp(balances)).toBe(true);
   });
 });

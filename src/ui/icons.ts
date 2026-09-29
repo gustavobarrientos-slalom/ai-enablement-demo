@@ -2,6 +2,7 @@ import { library } from '@fortawesome/fontawesome-svg-core';
 import {
   faCircleCheck,
   faCircleInfo,
+  faCoins,
   faPen,
   faReceipt,
   faTrash,
@@ -19,12 +20,14 @@ library.add(
   faReceipt,
   faPen,
   faCircleCheck,
+  faCoins,
   faTriangleExclamation,
 );
 
 export {
   faCircleCheck,
   faCircleInfo,
+  faCoins,
   faPen,
   faReceipt,
   faTrash,

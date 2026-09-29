@@ -3,9 +3,12 @@ import {
   ERROR_MESSAGES,
   NO_EXPENSES_MESSAGE,
   SETTLED_UP_MESSAGE,
+  TIP_LABEL,
+  TIP_MODE_LABELS,
   TRANSFERS_HEADING,
   errorMessage,
   splitDifferenceLabel,
+  tipLabel,
   transferLabel,
 } from './messages';
 
@@ -87,5 +90,37 @@ describe('settlement copy', () => {
     for (const word of ['minimum', 'minimal', 'fewest', 'optimal', 'least']) {
       expect(copy).not.toContain(word);
     }
+  });
+});
+
+describe('tip copy', () => {
+  it.each([
+    ['NEGATIVE_TIP', 'The tip cannot be negative'],
+    ['TIP_PERCENT_OUT_OF_RANGE', 'The tip percentage must be between 0 and 100'],
+    ['TIP_PERCENT_NOT_INTEGER', 'The tip percentage must be a whole number'],
+    ['TIP_TOO_MANY_DECIMALS', 'The tip can have at most 2 decimals'],
+  ] as const)('maps %s to its message', (code, expected) => {
+    expect(ERROR_MESSAGES[code]).toBe(expected);
+  });
+
+  it('labels the tip field', () => {
+    expect(TIP_LABEL).toBe('Tip');
+  });
+
+  it('labels every tip mode', () => {
+    expect(TIP_MODE_LABELS.none).toBe('No tip');
+    expect(TIP_MODE_LABELS.percent).toBe('Percentage');
+    expect(TIP_MODE_LABELS.fixed).toBe('Fixed amount');
+  });
+
+  it('formats a tip indicator with MXN formatting', () => {
+    expect(tipLabel(2500)).toBe('Includes $25.00 tip');
+  });
+
+  it('keeps every message in English', () => {
+    const messages = Object.values(ERROR_MESSAGES);
+
+    expect(messages.every((message) => message.length > 0)).toBe(true);
+    expect(messages.some((message) => /[áéíóúñ¿¡]/i.test(message))).toBe(false);
   });
 });

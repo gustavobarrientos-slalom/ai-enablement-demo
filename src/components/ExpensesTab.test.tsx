@@ -205,3 +205,133 @@ describe('editing and deleting', () => {
     expect(screen.getByText(/2 beneficiaries/)).toBeInTheDocument();
   });
 });
+
+describe('tips', () => {
+  async function addTipped(
+    user: ReturnType<typeof userEvent.setup>,
+    concept: string,
+    amount: string,
+    mode: 'Percentage' | 'Fixed amount',
+    value: string,
+  ) {
+    await fillBasics(user, concept, amount);
+
+    for (const name of ['Ana', 'Luis', 'Carla']) {
+      await user.click(screen.getByLabelText(name));
+    }
+
+    await user.click(screen.getByRole('radio', { name: mode }));
+    await user.type(
+      screen.getByLabelText(mode === 'Percentage' ? 'Tip percentage' : 'Tip amount'),
+      value,
+    );
+    await user.click(screen.getByRole('button', { name: 'Add expense' }));
+  }
+
+  it('saves a percentage tip and shows a tip inclusive total', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+
+    await addTipped(user, 'Dinner', '250.00', 'Percentage', '10');
+
+    expect(state().expenses[0]!.tip).toEqual({
+      kind: 'percent',
+      percent: 10,
+      amountCents: 2500,
+    });
+    expect(screen.getByTestId('expenses-total')).toHaveTextContent('$275.00');
+  });
+
+  it('shows the tip on a tipped row', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+
+    await addTipped(user, 'Dinner', '250.00', 'Percentage', '10');
+
+    const id = state().expenses[0]!.id;
+    expect(screen.getByTestId(`tip-${id}`)).toHaveTextContent('Includes $25.00 tip');
+  });
+
+  it('leaves an untipped row without a tip line', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+
+    await fillBasics(user, 'Taxi', '90.00');
+
+    for (const name of ['Ana', 'Luis', 'Carla']) {
+      await user.click(screen.getByLabelText(name));
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Add expense' }));
+
+    const id = state().expenses[0]!.id;
+    expect(screen.queryByTestId(`tip-${id}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId('expenses-total')).toHaveTextContent('$90.00');
+  });
+
+  it('sums tips into the group total', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+
+    await addTipped(user, 'Dinner', '100.00', 'Percentage', '10');
+    await fillBasics(user, 'Taxi', '50.00');
+
+    for (const name of ['Ana', 'Luis', 'Carla']) {
+      await user.click(screen.getByLabelText(name));
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Add expense' }));
+
+    expect(screen.getByTestId('expenses-total')).toHaveTextContent('$160.00');
+  });
+
+  it('previews the tip and the resulting total before saving', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+
+    await fillBasics(user, 'Dinner', '250.00');
+    await user.click(screen.getByRole('radio', { name: 'Percentage' }));
+    await user.type(screen.getByLabelText('Tip percentage'), '10');
+
+    expect(screen.getByTestId('tip-preview')).toHaveTextContent(
+      'Includes $25.00 tip — total $275.00',
+    );
+  });
+
+  it('blocks saving and explains an invalid tip', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+
+    await addTipped(user, 'Dinner', '250.00', 'Percentage', '101');
+
+    expect(state().expenses).toHaveLength(0);
+    expect(
+      screen.getByText('The tip percentage must be between 0 and 100'),
+    ).toBeInTheDocument();
+  });
+
+  it('accepts a fixed tip', async () => {
+    const user = userEvent.setup();
+    seedGroup();
+    render(<ExpensesTab />);
+
+    await addTipped(user, 'Dinner', '100.00', 'Fixed amount', '10.00');
+
+    expect(state().expenses[0]!.tip).toEqual({ kind: 'fixed', amountCents: 1000 });
+    expect(screen.getByTestId('expenses-total')).toHaveTextContent('$110.00');
+  });
+
+  it('hides the tip input until a tip mode is chosen', () => {
+    seedGroup();
+    render(<ExpensesTab />);
+
+    expect(screen.queryByLabelText('Tip percentage')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Tip amount')).not.toBeInTheDocument();
+  });
+});

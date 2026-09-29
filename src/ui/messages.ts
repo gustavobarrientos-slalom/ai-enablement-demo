@@ -1,4 +1,4 @@
-import type { AppError, Participant, Transfer } from '../domain/types';
+import type { AppError, Participant, TipMode, Transfer } from '../domain/types';
 import { formatCents } from './currency';
 
 export const PARTICIPANT_HAS_EXPENSES_MESSAGE = 'Has associated expenses';
@@ -36,7 +36,24 @@ export const ERROR_MESSAGES: Record<AppError, string> = {
   NEGATIVE_SHARE: 'Shares cannot be negative',
   SHARES_DO_NOT_SUM: 'The shares must add up to the total',
   NETS_DO_NOT_SUM: NETS_DO_NOT_SUM_MESSAGE,
+  NEGATIVE_TIP: 'The tip cannot be negative',
+  TIP_PERCENT_OUT_OF_RANGE: 'The tip percentage must be between 0 and 100',
+  TIP_PERCENT_NOT_INTEGER: 'The tip percentage must be a whole number',
+  TIP_TOO_MANY_DECIMALS: 'The tip can have at most 2 decimals',
 };
+
+export const TIP_LABEL = 'Tip';
+
+export const TIP_MODE_LABELS: Record<TipMode, string> = {
+  none: 'No tip',
+  percent: 'Percentage',
+  fixed: 'Fixed amount',
+};
+
+/** Shown on an expense row that carries a tip. */
+export function tipLabel(tipCents: number): string {
+  return `Includes ${formatCents(tipCents)} tip`;
+}
 
 export const INVALID_GROUP_HINT = 'Add at least 2 participants to continue';
 

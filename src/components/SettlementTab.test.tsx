@@ -25,6 +25,8 @@ function addEqual(concept: string, amount: string, payerId: string, beneficiaryI
     splitMode: 'equal',
     beneficiaryIds,
     customAmounts: {},
+    tipMode: 'none' as const,
+    tipValue: '',
   });
 }
 
@@ -120,6 +122,8 @@ describe('golden scenario rendering', () => {
         [diana!]: '200.00',
         [carla!]: '100.00',
       },
+      tipMode: 'none' as const,
+      tipValue: '',
     });
     addEqual('Dessert', '100.01', beto!, everyone);
 
@@ -202,6 +206,8 @@ describe('recalculation', () => {
         splitMode: 'equal',
         beneficiaryIds: [ana!, luis!],
         customAmounts: {},
+        tipMode: 'none' as const,
+        tipValue: '',
       });
     });
     rerender(<SettlementTab />);

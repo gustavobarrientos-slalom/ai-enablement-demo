@@ -237,6 +237,8 @@ describe('expenses', () => {
       splitMode: 'equal' as const,
       beneficiaryIds,
       customAmounts: {},
+      tipMode: 'none' as const,
+      tipValue: '',
     };
   }
 
@@ -356,6 +358,8 @@ describe('expense persistence', () => {
         splitMode: 'equal',
         beneficiaryIds: [ana!.id, luis!.id],
         customAmounts: {},
+        tipMode: 'none' as const,
+        tipValue: '',
       });
     }
 
@@ -456,6 +460,8 @@ describe('settlement selectors', () => {
       splitMode: 'equal' as const,
       beneficiaryIds,
       customAmounts: {},
+      tipMode: 'none' as const,
+      tipValue: '',
     };
   }
 
@@ -566,5 +572,119 @@ describe('settlement selectors', () => {
     expect(selectTransfers(state())).toEqual(before);
     expect(netFor(ana)).toBe(5000);
     expect(netFor(luis)).toBe(-5000);
+  });
+});
+
+describe('tip persistence', () => {
+  /** A literal version 2 payload, written by hand so it cannot drift. */
+  const V2_PAYLOAD = {
+    version: 2,
+    state: {
+      eventName: 'Trip to Oaxaca',
+      participants: [
+        { id: 'p1', name: 'Ana' },
+        { id: 'p2', name: 'Luis' },
+      ],
+      expenses: [
+        {
+          id: 'e1',
+          concept: 'Dinner',
+          amountCents: 10000,
+          payerId: 'p1',
+          splitMode: 'equal',
+          shares: [
+            { participantId: 'p1', amountCents: 5000 },
+            { participantId: 'p2', amountCents: 5000 },
+          ],
+        },
+      ],
+    },
+  };
+
+  it('migrates version 2 expenses forward with no tip', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(V2_PAYLOAD));
+
+    await useAppStore.persist.rehydrate();
+
+    expect(state().eventName).toBe('Trip to Oaxaca');
+    expect(state().expenses).toHaveLength(1);
+    expect(state().expenses[0]!.tip).toBeNull();
+    expect(selectExpensesTotal(state())).toBe(10000);
+  });
+
+  it('still discards an unknown version', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...V2_PAYLOAD, version: 99 }),
+    );
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().expenses).toEqual([]);
+    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
+  });
+
+  it('discards a malformed tip rather than loading an inconsistent expense', async () => {
+    const withBadTip = structuredClone(V2_PAYLOAD) as typeof V2_PAYLOAD & {
+      version: number;
+      state: { expenses: Array<Record<string, unknown>> };
+    };
+
+    withBadTip.version = 3;
+    withBadTip.state.expenses[0]!.tip = { kind: 'fixed', amountCents: -500 };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(withBadTip));
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().expenses).toEqual([]);
+  });
+
+  it('discards a percent tip with a non integer percentage', async () => {
+    const withBadTip = structuredClone(V2_PAYLOAD) as typeof V2_PAYLOAD & {
+      version: number;
+      state: { expenses: Array<Record<string, unknown>> };
+    };
+
+    withBadTip.version = 3;
+    withBadTip.state.expenses[0]!.tip = {
+      kind: 'percent',
+      percent: 12.5,
+      amountCents: 1250,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(withBadTip));
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().expenses).toEqual([]);
+  });
+
+  it('round trips a tipped expense through storage', async () => {
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+
+    const [anaP, luisP] = state().participants;
+    const ana = anaP!.id;
+    const luis = luisP!.id;
+
+    state().addExpense({
+      concept: 'Dinner',
+      amount: '250.00',
+      payerId: ana,
+      splitMode: 'equal',
+      beneficiaryIds: [ana, luis],
+      customAmounts: {},
+      tipMode: 'percent',
+      tipValue: '10',
+    });
+
+    const stored = localStorage.getItem(STORAGE_KEY)!;
+
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, stored);
+    await useAppStore.persist.rehydrate();
+
+    expect(state().expenses[0]!.tip).toEqual({
+      kind: 'percent',
+      percent: 10,
+      amountCents: 2500,
+    });
+    expect(selectExpensesTotal(state())).toBe(27500);
   });
 });
