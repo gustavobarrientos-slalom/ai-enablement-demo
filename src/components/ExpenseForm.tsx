@@ -1,0 +1,253 @@
+import { useId, useMemo, useState, type FormEvent } from 'react';
+import { CONCEPT_MAX_LENGTH, createEmptyDraft } from '../domain/expense';
+import { parseAmountToCents } from '../domain/money';
+import { buildCustomShares, splitDifference } from '../domain/split';
+import type { AppError, ExpenseDraft, Participant } from '../domain/types';
+import { ERROR_MESSAGES, splitDifferenceLabel } from '../ui/messages';
+
+interface ExpenseFormProps {
+  participants: readonly Participant[];
+  initialDraft?: ExpenseDraft;
+  submitLabel: string;
+  /** Returns null on success, or the error to display. */
+  onSubmit: (draft: ExpenseDraft) => AppError | null;
+  onCancel?: () => void;
+}
+
+/**
+ * Computes the live remaining/over indicator for a custom split. Returns null
+ * when the indicator does not apply (equal split, or an amount not yet valid).
+ */
+function useCustomDifference(
+  draft: ExpenseDraft,
+  participants: readonly Participant[],
+): number | null {
+  return useMemo(() => {
+    if (draft.splitMode !== 'custom' || draft.beneficiaryIds.length === 0) {
+      return null;
+    }
+
+    const amount = parseAmountToCents(draft.amount);
+
+    if (!amount.ok) {
+      return null;
+    }
+
+    const shares = buildCustomShares(draft.beneficiaryIds, draft.customAmounts, participants);
+
+    if (!shares.ok) {
+      return null;
+    }
+
+    return splitDifference(shares.value, amount.value);
+  }, [draft, participants]);
+}
+
+export function ExpenseForm({
+  participants,
+  initialDraft,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: ExpenseFormProps) {
+  const [draft, setDraft] = useState<ExpenseDraft>(
+    () => initialDraft ?? createEmptyDraft(participants[0]?.id ?? ''),
+  );
+  const [error, setError] = useState<AppError | null>(null);
+
+  // Create and edit forms can be mounted at once, so ids must stay unique.
+  const formId = useId();
+
+  const difference = useCustomDifference(draft, participants);
+  const differenceLabel = difference === null ? null : splitDifferenceLabel(difference);
+  const unbalanced = difference !== null && difference !== 0;
+
+  function update(patch: Partial<ExpenseDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+    setError(null);
+  }
+
+  function toggleBeneficiary(id: string) {
+    setDraft((current) => ({
+      ...current,
+      beneficiaryIds: current.beneficiaryIds.includes(id)
+        ? current.beneficiaryIds.filter((beneficiaryId) => beneficiaryId !== id)
+        : [...current.beneficiaryIds, id],
+    }));
+    setError(null);
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const failure = onSubmit(draft);
+
+    if (failure) {
+      setError(failure);
+      return;
+    }
+
+    setError(null);
+
+    // Only the create form resets; the edit form is unmounted by its parent.
+    if (!initialDraft) {
+      setDraft(createEmptyDraft(participants[0]?.id ?? ''));
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3" noValidate>
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`${formId}-concept`} className="text-sm font-semibold text-slate-700">
+          Concept
+        </label>
+        <input
+          id={`${formId}-concept`}
+          type="text"
+          value={draft.concept}
+          maxLength={CONCEPT_MAX_LENGTH + 1}
+          placeholder="Dinner"
+          onChange={(event) => update({ concept: event.target.value })}
+          className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`${formId}-amount`} className="text-sm font-semibold text-slate-700">
+          Amount
+        </label>
+        <input
+          id={`${formId}-amount`}
+          type="text"
+          inputMode="decimal"
+          value={draft.amount}
+          placeholder="0.00"
+          onChange={(event) => update({ amount: event.target.value })}
+          className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`${formId}-payer`} className="text-sm font-semibold text-slate-700">
+          Paid by
+        </label>
+        <select
+          id={`${formId}-payer`}
+          value={draft.payerId}
+          onChange={(event) => update({ payerId: event.target.value })}
+          className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+        >
+          {participants.map((participant) => (
+            <option key={participant.id} value={participant.id}>
+              {participant.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-semibold text-slate-700">Split between</legend>
+
+        <div className="flex gap-2" role="radiogroup" aria-label="Split mode">
+          {(['equal', 'custom'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={draft.splitMode === mode}
+              onClick={() => update({ splitMode: mode })}
+              className={[
+                'min-h-11 flex-1 rounded-lg border px-3 text-sm',
+                draft.splitMode === mode
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-300 bg-white text-slate-700',
+              ].join(' ')}
+            >
+              {mode === 'equal' ? 'Equally' : 'Custom'}
+            </button>
+          ))}
+        </div>
+
+        <ul className="flex flex-col gap-2">
+          {participants.map((participant) => {
+            const selected = draft.beneficiaryIds.includes(participant.id);
+
+            return (
+              <li
+                key={participant.id}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+              >
+                <input
+                  id={`${formId}-beneficiary-${participant.id}`}
+                  type="checkbox"
+                  checked={selected}
+                  onChange={() => toggleBeneficiary(participant.id)}
+                  className="h-5 w-5"
+                />
+                <label
+                  htmlFor={`${formId}-beneficiary-${participant.id}`}
+                  className="min-w-0 flex-1 truncate text-base"
+                >
+                  {participant.name}
+                </label>
+                {draft.splitMode === 'custom' && selected && (
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label={`Amount for ${participant.name}`}
+                    value={draft.customAmounts[participant.id] ?? ''}
+                    placeholder="0.00"
+                    onChange={(event) =>
+                      update({
+                        customAmounts: {
+                          ...draft.customAmounts,
+                          [participant.id]: event.target.value,
+                        },
+                      })
+                    }
+                    className="min-h-11 w-24 rounded-lg border border-slate-300 px-2 text-right text-base focus:border-slate-500 focus:outline-none"
+                  />
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        {differenceLabel && (
+          <p role="status" className="text-sm font-medium text-amber-700">
+            {differenceLabel}
+          </p>
+        )}
+      </fieldset>
+
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {ERROR_MESSAGES[error]}
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={unbalanced}
+          aria-disabled={unbalanced}
+          className={[
+            'min-h-11 flex-1 rounded-lg px-3 text-base text-white',
+            unbalanced ? 'cursor-not-allowed bg-slate-400' : 'bg-slate-900',
+          ].join(' ')}
+        >
+          {submitLabel}
+        </button>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="min-h-11 rounded-lg border border-slate-300 px-3 text-base text-slate-700"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </form>
+  );
+}

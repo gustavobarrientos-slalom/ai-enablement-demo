@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { GroupTab } from './components/GroupTab';
+import { ExpensesTab } from './components/ExpensesTab';
 import { TabBar, type TabId } from './components/TabBar';
 import { selectIsGroupValid, useAppStore } from './store/useAppStore';
 import { faUsers } from './ui/icons';
@@ -39,7 +40,7 @@ export function App() {
         )}
         {activeTab === 'expenses' && (
           <section role="tabpanel" id="panel-expenses" aria-labelledby="tab-expenses">
-            <p className="text-sm text-slate-500">Coming soon: expense tracking.</p>
+            <ExpensesTab />
           </section>
         )}
         {activeTab === 'settlement' && (

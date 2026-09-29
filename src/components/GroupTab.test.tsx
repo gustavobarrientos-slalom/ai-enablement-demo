@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GroupTab } from './GroupTab';
 import { resetAppStore, useAppStore } from '../store/useAppStore';
+import { makeExpense } from '../test/factories';
 
 function addParticipants(...names: string[]) {
   for (const name of names) {
@@ -150,7 +151,7 @@ describe('ordering and removal', () => {
     addParticipants('Ana', 'Luis');
     const [ana, luis] = useAppStore.getState().participants;
     useAppStore.setState({
-      expenses: [{ id: 'e1', payerId: ana!.id, beneficiaryIds: [] }],
+      expenses: [makeExpense({ payerId: ana!.id })],
     });
     render(<GroupTab />);
 
@@ -166,7 +167,7 @@ describe('ordering and removal', () => {
     addParticipants('Ana', 'Luis');
     const [ana, luis] = useAppStore.getState().participants;
     useAppStore.setState({
-      expenses: [{ id: 'e1', payerId: ana!.id, beneficiaryIds: [luis!.id] }],
+      expenses: [makeExpense({ payerId: ana!.id, beneficiaryIds: [luis!.id] })],
     });
     render(<GroupTab />);
 
@@ -178,7 +179,7 @@ describe('ordering and removal', () => {
     addParticipants('Ana', 'Luis');
     const [ana] = useAppStore.getState().participants;
     useAppStore.setState({
-      expenses: [{ id: 'e1', payerId: ana!.id, beneficiaryIds: [] }],
+      expenses: [makeExpense({ payerId: ana!.id })],
     });
     render(<GroupTab />);
 

@@ -15,7 +15,7 @@ import {
   PARTICIPANT_NAME_MAX_LENGTH,
   canRemoveParticipant,
 } from '../domain/group';
-import type { GroupError } from '../domain/types';
+import type { AppError } from '../domain/types';
 
 export function GroupTab() {
   const eventName = useAppStore((state) => state.eventName);
@@ -27,9 +27,9 @@ export function GroupTab() {
   const expenses = useAppStore((state) => state.expenses);
 
   const [eventNameDraft, setEventNameDraft] = useState(eventName);
-  const [eventNameError, setEventNameError] = useState<GroupError | null>(null);
+  const [eventNameError, setEventNameError] = useState<AppError | null>(null);
   const [participantDraft, setParticipantDraft] = useState('');
-  const [participantError, setParticipantError] = useState<GroupError | null>(null);
+  const [participantError, setParticipantError] = useState<AppError | null>(null);
 
   useEffect(() => {
     setEventNameDraft(eventName);

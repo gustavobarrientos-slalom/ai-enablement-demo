@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   STORAGE_KEY,
+  STORAGE_VERSION,
   resetAppStore,
   selectCanRemoveParticipant,
+  selectExpensesTotal,
   selectIsGroupValid,
   useAppStore,
 } from './useAppStore';
 import { DEFAULT_EVENT_NAME } from '../domain/group';
+import { makeExpense } from '../test/factories';
 
 function state() {
   return useAppStore.getState();
@@ -25,6 +28,7 @@ describe('initial state', () => {
   it('uses the default event name and has no participants', () => {
     expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
     expect(state().participants).toEqual([]);
+    expect(state().expenses).toEqual([]);
   });
 });
 
@@ -101,7 +105,7 @@ describe('removeParticipant', () => {
     state().addParticipant('Luis');
     const [ana, luis] = state().participants;
     useAppStore.setState({
-      expenses: [{ id: 'e1', payerId: ana!.id, beneficiaryIds: [luis!.id] }],
+      expenses: [makeExpense({ payerId: ana!.id, beneficiaryIds: [luis!.id] })],
     });
 
     expect(state().removeParticipant(ana!.id)).toBe(false);
@@ -134,7 +138,7 @@ describe('derived selectors', () => {
     expect(selectCanRemoveParticipant(state())(ana!.id)).toBe(true);
 
     useAppStore.setState({
-      expenses: [{ id: 'e1', payerId: ana!.id, beneficiaryIds: [] }],
+      expenses: [makeExpense({ payerId: ana!.id })],
     });
     expect(selectCanRemoveParticipant(state())(ana!.id)).toBe(false);
   });
@@ -149,10 +153,10 @@ describe('persistence', () => {
     expect(raw).not.toBeNull();
 
     const stored = JSON.parse(raw!);
-    expect(stored.version).toBe(1);
+    expect(stored.version).toBe(STORAGE_VERSION);
     expect(stored.state.eventName).toBe('Trip to Oaxaca');
     expect(stored.state.participants).toHaveLength(1);
-    expect(stored.state.expenses).toBeUndefined();
+    expect(stored.state.expenses).toEqual([]);
   });
 
   it('restores state and order on reload', async () => {
@@ -209,5 +213,225 @@ describe('persistence', () => {
   it('keeps store actions after rehydrating', async () => {
     await useAppStore.persist.rehydrate();
     expect(typeof state().addParticipant).toBe('function');
+  });
+});
+
+describe('expenses', () => {
+  function seedParticipants(): [string, string, string] {
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+    state().addParticipant('Carla');
+
+    const [ana, luis, carla] = state().participants;
+
+    return [ana!.id, luis!.id, carla!.id];
+  }
+
+  function equalDraft(payerId: string, beneficiaryIds: string[], amount = '250.00') {
+    return {
+      concept: 'Dinner',
+      amount,
+      payerId,
+      splitMode: 'equal' as const,
+      beneficiaryIds,
+      customAmounts: {},
+    };
+  }
+
+  it('adds an expense with shares summing to the amount', () => {
+    const [ana, luis, carla] = seedParticipants();
+
+    expect(state().addExpense(equalDraft(ana, [ana, luis, carla]))).toBe(true);
+    expect(state().expenses).toHaveLength(1);
+
+    const expense = state().expenses[0]!;
+    expect(expense.amountCents).toBe(25000);
+    expect(expense.shares.map((share) => share.amountCents)).toEqual([8334, 8333, 8333]);
+    expect(state().lastError).toBeNull();
+  });
+
+  it('rejects an invalid expense and leaves state unchanged', () => {
+    const [ana, luis] = seedParticipants();
+
+    expect(state().addExpense(equalDraft(ana, [ana, luis], '0'))).toBe(false);
+    expect(state().expenses).toEqual([]);
+    expect(state().lastError).toBe('AMOUNT_NOT_POSITIVE');
+  });
+
+  it('updates an existing expense in place', () => {
+    const [ana, luis] = seedParticipants();
+    state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
+
+    const id = state().expenses[0]!.id;
+
+    expect(
+      state().updateExpense(id, {
+        ...equalDraft(luis, [ana, luis], '50.00'),
+        concept: 'Taxi',
+      }),
+    ).toBe(true);
+
+    expect(state().expenses).toHaveLength(1);
+
+    const expense = state().expenses[0]!;
+    expect(expense.id).toBe(id);
+    expect(expense.concept).toBe('Taxi');
+    expect(expense.amountCents).toBe(5000);
+    expect(expense.payerId).toBe(luis);
+  });
+
+  it('leaves the expense untouched when an edit is invalid', () => {
+    const [ana, luis] = seedParticipants();
+    state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
+
+    const before = state().expenses[0]!;
+
+    expect(state().updateExpense(before.id, equalDraft(ana, [], '100.00'))).toBe(false);
+    expect(state().expenses[0]).toEqual(before);
+    expect(state().lastError).toBe('NO_BENEFICIARIES');
+  });
+
+  it('ignores updates for an unknown expense id', () => {
+    const [ana, luis] = seedParticipants();
+    state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
+
+    expect(state().updateExpense('missing', equalDraft(ana, [ana, luis]))).toBe(false);
+    expect(state().expenses).toHaveLength(1);
+  });
+
+  it('removes an expense and updates the total', () => {
+    const [ana, luis] = seedParticipants();
+    state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
+    state().addExpense(equalDraft(luis, [ana, luis], '40.00'));
+
+    expect(selectExpensesTotal(state())).toBe(14000);
+
+    const id = state().expenses[0]!.id;
+    state().removeExpense(id);
+
+    expect(state().expenses).toHaveLength(1);
+    expect(selectExpensesTotal(state())).toBe(4000);
+  });
+
+  it('blocks removing a participant referenced by an expense', () => {
+    const [ana, luis] = seedParticipants();
+    state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
+
+    expect(selectCanRemoveParticipant(state())(ana)).toBe(false);
+    expect(state().removeParticipant(ana)).toBe(false);
+    expect(state().lastError).toBe('PARTICIPANT_HAS_EXPENSES');
+  });
+
+  it('computes the total without storing it', () => {
+    const [ana, luis] = seedParticipants();
+    state().addExpense(equalDraft(ana, [ana, luis], '100.00'));
+
+    expect(selectExpensesTotal(state())).toBe(10000);
+    expect(Object.keys(state())).not.toContain('total');
+    expect(Object.keys(state())).not.toContain('balances');
+  });
+});
+
+describe('expense persistence', () => {
+  async function reload(): Promise<void> {
+    const stored = localStorage.getItem(STORAGE_KEY)!;
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, stored);
+    await useAppStore.persist.rehydrate();
+  }
+
+  it('restores expenses in order across a reload', async () => {
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+
+    const [ana, luis] = state().participants;
+
+    for (const concept of ['First', 'Second', 'Third']) {
+      state().addExpense({
+        concept,
+        amount: '30.00',
+        payerId: ana!.id,
+        splitMode: 'equal',
+        beneficiaryIds: [ana!.id, luis!.id],
+        customAmounts: {},
+      });
+    }
+
+    await reload();
+
+    expect(state().expenses.map((expense) => expense.concept)).toEqual([
+      'First',
+      'Second',
+      'Third',
+    ]);
+    expect(selectExpensesTotal(state())).toBe(9000);
+  });
+
+  it('discards expenses whose shares do not sum to the amount', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: STORAGE_VERSION,
+        state: {
+          eventName: 'Trip',
+          participants: [{ id: '1', name: 'Ana' }],
+          expenses: [
+            {
+              id: 'e1',
+              concept: 'Dinner',
+              amountCents: 10000,
+              payerId: '1',
+              splitMode: 'equal',
+              shares: [{ participantId: '1', amountCents: 9999 }],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
+    expect(state().expenses).toEqual([]);
+  });
+
+  it('discards expenses referencing an unknown participant', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: STORAGE_VERSION,
+        state: {
+          eventName: 'Trip',
+          participants: [{ id: '1', name: 'Ana' }],
+          expenses: [
+            {
+              id: 'e1',
+              concept: 'Dinner',
+              amountCents: 10000,
+              payerId: '1',
+              splitMode: 'equal',
+              shares: [{ participantId: 'ghost', amountCents: 10000 }],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().expenses).toEqual([]);
+    expect(state().participants).toEqual([]);
+  });
+
+  it('discards a version 1 payload instead of crashing', async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        state: { eventName: 'Old trip', participants: [{ id: '1', name: 'Ana' }] },
+      }),
+    );
+
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+    expect(state().eventName).toBe(DEFAULT_EVENT_NAME);
+    expect(state().expenses).toEqual([]);
   });
 });

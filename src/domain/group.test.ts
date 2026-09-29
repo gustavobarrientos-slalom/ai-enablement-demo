@@ -14,6 +14,7 @@ import {
   validateParticipantName,
 } from './group';
 import type { Expense, Participant } from './types';
+import { makeExpense } from '../test/factories';
 
 function participant(id: string, name: string): Participant {
   return { id, name };
@@ -93,6 +94,7 @@ describe('validateEventName', () => {
     expect(createEmptyGroupState()).toEqual({
       eventName: DEFAULT_EVENT_NAME,
       participants: [],
+      expenses: [],
     });
     expect(DEFAULT_EVENT_NAME).toBe('New Event');
   });
@@ -183,7 +185,7 @@ describe('isGroupValid', () => {
 
 describe('removing participants with expenses', () => {
   const expenses: Expense[] = [
-    { id: 'e1', payerId: '1', beneficiaryIds: ['2', '3'] },
+    makeExpense({ payerId: '1', beneficiaryIds: ['2', '3'] }),
   ];
 
   it('allows removing a participant without expenses', () => {
@@ -220,6 +222,7 @@ describe('parseGroupState', () => {
     ).toEqual({
       eventName: 'Trip to Oaxaca',
       participants: [participant('1', 'Ana'), participant('2', 'Luis')],
+      expenses: [],
     });
   });
 

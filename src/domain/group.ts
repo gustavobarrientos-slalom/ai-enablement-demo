@@ -5,6 +5,8 @@ import {
   type GroupState,
   type Participant,
   type Result,
+  type Share,
+  type SplitMode,
 } from './types';
 
 export const DEFAULT_EVENT_NAME = 'New Event';
@@ -26,7 +28,7 @@ export function namesMatch(a: string, b: string): boolean {
 }
 
 export function createEmptyGroupState(): GroupState {
-  return { eventName: DEFAULT_EVENT_NAME, participants: [] };
+  return { eventName: DEFAULT_EVENT_NAME, participants: [], expenses: [] };
 }
 
 export function validateEventName(raw: string): Result<string> {
@@ -102,7 +104,7 @@ export function isParticipantReferenced(
   return expenses.some(
     (expense) =>
       expense.payerId === participantId ||
-      expense.beneficiaryIds.includes(participantId),
+      expense.shares.some((share) => share.participantId === participantId),
   );
 }
 
@@ -129,6 +131,77 @@ function isParticipant(value: unknown): value is Participant {
   );
 }
 
+function isShare(value: unknown, participantIds: ReadonlySet<string>): value is Share {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.participantId === 'string' &&
+    participantIds.has(candidate.participantId) &&
+    typeof candidate.amountCents === 'number' &&
+    Number.isSafeInteger(candidate.amountCents) &&
+    candidate.amountCents >= 0
+  );
+}
+
+function isExpense(value: unknown, participantIds: ReadonlySet<string>): value is Expense {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const { id, concept, amountCents, payerId, splitMode, shares } = candidate;
+
+  if (typeof id !== 'string' || id.length === 0) {
+    return false;
+  }
+
+  if (
+    typeof concept !== 'string' ||
+    normalizeName(concept).length === 0 ||
+    normalizeName(concept).length > EVENT_NAME_MAX_LENGTH
+  ) {
+    return false;
+  }
+
+  if (
+    typeof amountCents !== 'number' ||
+    !Number.isSafeInteger(amountCents) ||
+    amountCents <= 0
+  ) {
+    return false;
+  }
+
+  if (typeof payerId !== 'string' || !participantIds.has(payerId)) {
+    return false;
+  }
+
+  if (splitMode !== 'equal' && splitMode !== 'custom') {
+    return false;
+  }
+
+  if (!Array.isArray(shares) || shares.length === 0) {
+    return false;
+  }
+
+  if (!shares.every((share) => isShare(share, participantIds))) {
+    return false;
+  }
+
+  const shareIds = new Set((shares as Share[]).map((share) => share.participantId));
+
+  if (shareIds.size !== shares.length) {
+    return false;
+  }
+
+  const total = (shares as Share[]).reduce((sum, share) => sum + share.amountCents, 0);
+
+  return total === amountCents;
+}
+
 /** Returns `null` for anything that is not valid persisted group state. */
 export function parseGroupState(value: unknown): GroupState | null {
   if (typeof value !== 'object' || value === null) {
@@ -136,7 +209,7 @@ export function parseGroupState(value: unknown): GroupState | null {
   }
 
   const candidate = value as Record<string, unknown>;
-  const { eventName, participants } = candidate;
+  const { eventName, participants, expenses } = candidate;
 
   if (typeof eventName !== 'string' || !validateEventName(eventName).ok) {
     return null;
@@ -162,11 +235,31 @@ export function parseGroupState(value: unknown): GroupState | null {
     names.add(normalizedName);
   }
 
+  const rawExpenses = expenses === undefined ? [] : expenses;
+
+  if (!Array.isArray(rawExpenses) || !rawExpenses.every((item) => isExpense(item, ids))) {
+    return null;
+  }
+
+  const expenseIds = new Set((rawExpenses as Expense[]).map((expense) => expense.id));
+
+  if (expenseIds.size !== rawExpenses.length) {
+    return null;
+  }
+
   return {
     eventName: normalizeName(eventName),
     participants: (participants as Participant[]).map((participant) => ({
       id: participant.id,
       name: normalizeName(participant.name),
+    })),
+    expenses: (rawExpenses as Expense[]).map((expense) => ({
+      id: expense.id,
+      concept: normalizeName(expense.concept),
+      amountCents: expense.amountCents,
+      payerId: expense.payerId,
+      splitMode: expense.splitMode as SplitMode,
+      shares: expense.shares.map((share) => ({ ...share })),
     })),
   };
 }
