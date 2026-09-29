@@ -46,6 +46,7 @@ const dinner = build('e1', {
   ...dinnerDraft,
   tipMode: 'percent' as const,
   tipValue: '10',
+  category: 'other' as const,
 });
 
 /** The same dinner with no tip, so the tip is provably the only difference. */
@@ -53,6 +54,7 @@ const dinnerWithoutTip = build('e1', {
   ...dinnerDraft,
   tipMode: 'none' as const,
   tipValue: '',
+  category: 'other' as const,
 });
 
 const uber = build('e2', {
@@ -64,6 +66,7 @@ const uber = build('e2', {
   customAmounts: {},
   tipMode: 'none' as const,
   tipValue: '',
+  category: 'other' as const,
 });
 
 const drinks = build('e3', {
@@ -79,6 +82,7 @@ const drinks = build('e3', {
   },
   tipMode: 'none' as const,
   tipValue: '',
+  category: 'other' as const,
 });
 
 const dessert = build('e4', {
@@ -90,6 +94,7 @@ const dessert = build('e4', {
   customAmounts: {},
   tipMode: 'none' as const,
   tipValue: '',
+  category: 'other' as const,
 });
 
 const expenses = [dinner, uber, drinks, dessert];

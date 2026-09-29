@@ -12,10 +12,18 @@ import type { AppError, ExpenseDraft } from '../domain/types';
 import { formatCents } from '../ui/currency';
 import {
   ARCHIVED_READ_ONLY_MESSAGE,
+  CATEGORY_LABELS,
   NO_EXPENSES_MESSAGE,
   tipLabel,
 } from '../ui/messages';
-import { faBoxArchive, faCoins, faPen, faReceipt, faTrash } from '../ui/icons';
+import {
+  CATEGORY_ICONS,
+  faBoxArchive,
+  faCoins,
+  faPen,
+  faReceipt,
+  faTrash,
+} from '../ui/icons';
 import { ExpenseForm } from './ExpenseForm';
 
 export function ExpensesTab() {
@@ -104,7 +112,13 @@ export function ExpensesTab() {
                   />
                 ) : (
                   <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
+                    <FontAwesomeIcon
+                      icon={CATEGORY_ICONS[expense.category]}
+                      data-testid={`category-${expense.id}`}
+                      title={CATEGORY_LABELS[expense.category]}
+                      className="w-5 shrink-0 text-slate-500"
+                    />
+                    <div className="min-w-0 flex-1">
                       <p className="truncate text-base">{expense.concept}</p>
                       <p className="truncate text-xs text-slate-500">
                         Paid by {participantName(expense.payerId)} &middot;{' '}

@@ -220,6 +220,7 @@ describe('event derived values', () => {
             { participantId: 'p2', amountCents: 5000 },
           ],
           tip: null,
+          category: 'other',
         },
       ],
     });
@@ -246,6 +247,7 @@ describe('event derived values', () => {
             { participantId: 'p2', amountCents: 5000 },
           ],
           tip: { kind: 'percent', percent: 10, amountCents: 1000 },
+          category: 'other',
         },
       ],
     });
@@ -343,6 +345,7 @@ describe('parseEventsState', () => {
             splitMode: 'equal',
             shares: [{ participantId: 'p1', amountCents: 1000 }],
             tip: null,
+            category: 'other',
           },
         ],
       }),

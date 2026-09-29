@@ -1,4 +1,5 @@
 import type {
+  Category,
   AppError,
   EventFilter,
   EventStatus,
@@ -47,9 +48,21 @@ export const ERROR_MESSAGES: Record<AppError, string> = {
   TIP_PERCENT_OUT_OF_RANGE: 'The tip percentage must be between 0 and 100',
   TIP_PERCENT_NOT_INTEGER: 'The tip percentage must be a whole number',
   TIP_TOO_MANY_DECIMALS: 'The tip can have at most 2 decimals',
+  UNKNOWN_CATEGORY: 'Select a valid category',
   EVENT_NOT_FOUND: 'That event is no longer available',
   EVENT_ARCHIVED: 'This event is archived and cannot be edited',
 };
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  food: 'Food',
+  drinks: 'Drinks',
+  transport: 'Transport',
+  lodging: 'Lodging',
+  entertainment: 'Entertainment',
+  other: 'Other',
+};
+
+export const CATEGORY_BREAKDOWN_HEADING = 'Spending by category';
 
 export const NO_EVENTS_MESSAGE = 'No events yet';
 export const CREATE_EVENT_LABEL = 'Create event';

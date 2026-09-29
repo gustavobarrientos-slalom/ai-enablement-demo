@@ -27,3 +27,16 @@ export function formatCents(cents: number): string {
 
   return cents < 0 ? `-${formatted}` : formatted;
 }
+
+const percentFormatter = new Intl.NumberFormat('es-MX', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/**
+ * Display-only percentage text, to one decimal place. Never used for money,
+ * so its floating-point input is safe here.
+ */
+export function formatPercent(percent: number): string {
+  return `${percentFormatter.format(percent)}%`;
+}

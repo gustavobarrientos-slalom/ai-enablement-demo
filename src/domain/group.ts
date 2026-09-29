@@ -9,6 +9,7 @@ import {
   type SplitMode,
   type Tip,
 } from './types';
+import { isCategory } from './category';
 
 export const DEFAULT_EVENT_NAME = 'New event';
 export const EVENT_NAME_MAX_LENGTH = 60;
@@ -182,10 +183,17 @@ function isExpense(value: unknown, participantIds: ReadonlySet<string>): value i
   }
 
   const candidate = value as Record<string, unknown>;
-  const { id, concept, amountCents, payerId, splitMode, shares, tip } = candidate;
+  const { id, concept, amountCents, payerId, splitMode, shares, tip, category } =
+    candidate;
 
   // Absent means an expense saved before tips existed.
   if (tip !== undefined && tip !== null && !isTip(tip)) {
+    return false;
+  }
+
+  // Strict at the current version: predecessor payloads are given a default
+  // category by an explicit migration before they ever reach this check.
+  if (!isCategory(category)) {
     return false;
   }
 
@@ -295,6 +303,7 @@ export function parseGroupState(value: unknown): GroupState | null {
       splitMode: expense.splitMode as SplitMode,
       shares: expense.shares.map((share) => ({ ...share })),
       tip: expense.tip ?? null,
+      category: expense.category,
     })),
   };
 }

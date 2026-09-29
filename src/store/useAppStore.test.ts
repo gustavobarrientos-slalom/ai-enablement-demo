@@ -226,6 +226,7 @@ describe('archive lifecycle', () => {
       customAmounts: {},
       tipMode: 'none',
       tipValue: '',
+      category: 'other' as const,
     });
 
     const before = eventById(id);
@@ -247,6 +248,7 @@ describe('archive lifecycle', () => {
         customAmounts: {},
         tipMode: 'none',
         tipValue: '',
+        category: 'other' as const,
       }),
     ).toBe(false);
     expect(state().removeExpense(before.expenses[0]!.id)).toBe(false);
@@ -362,6 +364,7 @@ describe('group actions require an active event', () => {
         customAmounts: {},
         tipMode: 'none',
         tipValue: '',
+        category: 'other' as const,
       }),
     ).toBe(false);
     expect(state().events).toEqual([]);
@@ -549,6 +552,7 @@ describe('timestamps and isolation', () => {
       customAmounts: {},
       tipMode: 'none',
       tipValue: '',
+      category: 'other' as const,
     });
 
     const b = seedActiveEvent('B');
@@ -564,6 +568,7 @@ describe('timestamps and isolation', () => {
       customAmounts: {},
       tipMode: 'none',
       tipValue: '',
+      category: 'other' as const,
     });
 
     state().openEvent(a);
@@ -606,6 +611,7 @@ describe('expenses', () => {
       customAmounts: {},
       tipMode: 'none' as const,
       tipValue: '',
+      category: 'other' as const,
     };
   }
 
@@ -855,6 +861,7 @@ describe('persistence', () => {
         customAmounts: {},
         tipMode: 'none',
         tipValue: '',
+        category: 'other' as const,
       });
     }
 
@@ -1048,6 +1055,7 @@ describe('settlement selectors', () => {
       customAmounts: {},
       tipMode: 'none' as const,
       tipValue: '',
+      category: 'other' as const,
     };
   }
 

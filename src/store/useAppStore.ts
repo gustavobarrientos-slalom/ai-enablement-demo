@@ -11,6 +11,7 @@ import {
   createEvent,
   findEvent,
   isEventEditable,
+  migrateEventsCategories,
   migrateLegacyGroupState,
   parseEventsState,
   renameEvent,
@@ -37,9 +38,12 @@ import type {
 } from '../domain/types';
 
 export const STORAGE_KEY = 'split:v2';
-export const STORAGE_VERSION = 4;
+export const STORAGE_VERSION = 5;
 
-/** The single-group schema this version migrates forward from. */
+/** The event collection that predates categories. */
+export const PRE_CATEGORY_STORAGE_VERSION = 4;
+
+/** The single-group schema this version still migrates forward from. */
 export const LEGACY_STORAGE_VERSION = 3;
 
 let clock: Clock = systemClock;
@@ -308,10 +312,19 @@ export const useAppStore = create<AppState>()(
        * is wrapped into one event. Anything older or unrecognized carries no
        * trustworthy shape, so it starts empty.
        */
-      migrate: (persisted, version) =>
-        version === LEGACY_STORAGE_VERSION
-          ? migrateLegacyGroupState(persisted, createId(), clock())
-          : createEmptyEventsState(),
+      migrate: (persisted, version) => {
+        // Each recognized predecessor is normalized to the current shape and
+        // then re-validated by `merge`; anything else starts empty.
+        if (version === PRE_CATEGORY_STORAGE_VERSION) {
+          return migrateEventsCategories(persisted);
+        }
+
+        if (version === LEGACY_STORAGE_VERSION) {
+          return migrateLegacyGroupState(persisted, createId(), clock());
+        }
+
+        return createEmptyEventsState();
+      },
       merge: (persisted, current) => {
         const parsed = parseEventsState(persisted) ?? createEmptyEventsState();
 

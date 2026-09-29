@@ -27,6 +27,7 @@ function draft(overrides: Partial<ExpenseDraft> = {}): ExpenseDraft {
     customAmounts: {},
     tipMode: 'none' as const,
     tipValue: '',
+    category: 'other' as const,
     ...overrides,
   };
 }
@@ -49,6 +50,7 @@ describe('validateExpense', () => {
           { participantId: carla.id, amountCents: 8333 },
         ],
         tip: null,
+        category: 'other',
       },
     });
   });
@@ -173,6 +175,7 @@ describe('expensesTotal', () => {
       splitMode: 'custom',
       shares: [{ participantId: ana.id, amountCents }],
       tip: null,
+      category: 'other',
     };
   }
 
@@ -200,6 +203,7 @@ describe('drafts', () => {
       customAmounts: {},
       tipMode: 'none' as const,
       tipValue: '',
+      category: 'other' as const,
     });
   });
 
@@ -227,6 +231,7 @@ describe('drafts', () => {
       },
       tipMode: 'none' as const,
       tipValue: '',
+      category: 'other' as const,
     });
 
     const revalidated = validateExpense(editable, participants, 'e1');
@@ -355,6 +360,7 @@ describe('expense tip', () => {
       customAmounts: { [ana.id]: '300.00', [luis.id]: '200.00', [carla.id]: '100.00' },
       tipMode: 'percent',
       tipValue: '10',
+      category: 'other' as const,
     });
 
     expect(expenseShares(expense).map((share) => share.amountCents)).toEqual([
@@ -370,6 +376,7 @@ describe('expense tip', () => {
       customAmounts: { [ana.id]: '50.00', [luis.id]: '0.00', [carla.id]: '50.00' },
       tipMode: 'fixed',
       tipValue: '10.00',
+      category: 'other' as const,
     });
 
     const shares = expenseShares(expense);
@@ -406,6 +413,7 @@ describe('expense tip', () => {
       customAmounts: { [ana.id]: '300.00', [luis.id]: '200.00', [carla.id]: '100.00' },
       tipMode: 'percent',
       tipValue: '10',
+      category: 'other' as const,
     });
 
     // Regression: storing tip inclusive shares made this fail SHARES_DO_NOT_SUM.

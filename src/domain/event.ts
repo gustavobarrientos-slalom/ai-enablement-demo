@@ -1,3 +1,4 @@
+import { DEFAULT_CATEGORY } from './category';
 import { expensesTotal } from './expense';
 import {
   DEFAULT_EVENT_NAME,
@@ -245,7 +246,9 @@ export function migrateLegacyGroupState(
   id: string,
   now: string,
 ): EventsState {
-  const group: GroupState | null = parseGroupState(value);
+  // The legacy payload predates categories, so it is normalized here rather
+  // than by each caller.
+  const group: GroupState | null = parseGroupState(migrateLegacyGroupCategories(value));
 
   if (!group) {
     return createEmptyEventsState();
@@ -266,4 +269,70 @@ export function migrateLegacyGroupState(
   };
 
   return { events: [event], lastActiveEventId: id };
+}
+
+/**
+ * Adds the default category to expenses that predate categories, leaving
+ * every other field untouched. Only a missing category is defaulted: an
+ * explicit unknown value stays invalid so the strict parser can reject it.
+ */
+function withDefaultCategories(expenses: unknown): unknown {
+  if (!Array.isArray(expenses)) {
+    return expenses;
+  }
+
+  return expenses.map((expense) => {
+    if (typeof expense !== 'object' || expense === null) {
+      return expense;
+    }
+
+    const candidate = expense as Record<string, unknown>;
+
+    if (candidate.category !== undefined) {
+      return candidate;
+    }
+
+    return { ...candidate, category: DEFAULT_CATEGORY };
+  });
+}
+
+/**
+ * Raw-payload migration for a predecessor event collection: every event keeps
+ * its id, name, status, timestamps, participants and expense order, and only
+ * gains a default category where one is missing.
+ */
+export function migrateEventsCategories(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  if (!Array.isArray(candidate.events)) {
+    return candidate;
+  }
+
+  return {
+    ...candidate,
+    events: candidate.events.map((event) => {
+      if (typeof event !== 'object' || event === null) {
+        return event;
+      }
+
+      const raw = event as Record<string, unknown>;
+
+      return { ...raw, expenses: withDefaultCategories(raw.expenses) };
+    }),
+  };
+}
+
+/** The same raw migration for the older single-group payload shape. */
+export function migrateLegacyGroupCategories(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return { ...candidate, expenses: withDefaultCategories(candidate.expenses) };
 }

@@ -1,4 +1,4 @@
-import type { Expense, Participant, Share, Tip } from '../domain/types';
+import type { Category, Expense, Participant, Share, Tip } from '../domain/types';
 import { selectParticipants, useAppStore } from '../store/useAppStore';
 
 interface ExpenseOverrides {
@@ -9,6 +9,7 @@ interface ExpenseOverrides {
   beneficiaryIds?: string[];
   shares?: Share[];
   tip?: Tip | null;
+  category?: Category;
 }
 
 /**
@@ -23,13 +24,23 @@ export function makeExpense(overrides: ExpenseOverrides): Expense {
     beneficiaryIds = [],
     shares,
     tip = null,
+    category = 'other',
   } = overrides;
 
   if (shares) {
     const amountCents =
       overrides.amountCents ?? shares.reduce((sum, share) => sum + share.amountCents, 0);
 
-    return { id, concept, amountCents, payerId, splitMode: 'custom', shares, tip };
+    return {
+      id,
+      concept,
+      amountCents,
+      payerId,
+      splitMode: 'custom',
+      shares,
+      tip,
+      category,
+    };
   }
 
   const amountCents = overrides.amountCents ?? 10000;
@@ -44,6 +55,7 @@ export function makeExpense(overrides: ExpenseOverrides): Expense {
       splitMode: 'custom',
       shares: [{ participantId: payerId, amountCents }],
       tip,
+      category,
     };
   }
 
@@ -61,6 +73,7 @@ export function makeExpense(overrides: ExpenseOverrides): Expense {
       amountCents: base + (index < remainder ? 1 : 0),
     })),
     tip,
+    category,
   };
 }
 

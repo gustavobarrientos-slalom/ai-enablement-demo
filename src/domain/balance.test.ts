@@ -24,6 +24,7 @@ function expense(
       customAmounts: {},
       tipMode: 'none' as const,
       tipValue: '',
+      category: 'other' as const,
     },
     participants,
     concept,
@@ -119,6 +120,7 @@ describe('computeBalances', () => {
       splitMode: 'custom',
       shares: [{ participantId: 'missing', amountCents: 5000 }],
       tip: null,
+      category: 'other',
     };
 
     const balances = computeBalances(participants, [ghost]);
@@ -199,6 +201,7 @@ describe('balances with tips', () => {
         customAmounts: {},
         tipMode: 'none',
         tipValue: '',
+        category: 'other' as const,
         ...overrides,
       },
       participants,
@@ -235,6 +238,7 @@ describe('balances with tips', () => {
         customAmounts: { [ana.id]: '300.00', [luis.id]: '200.00', [carla.id]: '100.00' },
         tipMode: 'percent',
         tipValue: '10',
+        category: 'other' as const,
       }),
     ]);
 
@@ -257,6 +261,7 @@ describe('balances with tips', () => {
         customAmounts: { [ana.id]: '11.11', [luis.id]: '22.22' },
         tipMode: 'percent',
         tipValue: '13',
+        category: 'other' as const,
       }),
     ];
 

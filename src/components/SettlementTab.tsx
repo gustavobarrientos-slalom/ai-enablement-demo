@@ -3,15 +3,19 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { selectExpenses, selectParticipants, useAppStore } from '../store/useAppStore';
 import { computeBalances, isSettledUp } from '../domain/balance';
 import { computeTransfers } from '../domain/settle';
-import { formatCents } from '../ui/currency';
+import { categoryPercent, categoryTotals } from '../domain/category';
+import { expensesTotal } from '../domain/expense';
+import { formatCents, formatPercent } from '../ui/currency';
 import {
   BALANCE_HEADINGS,
+  CATEGORY_BREAKDOWN_HEADING,
+  CATEGORY_LABELS,
   NETS_DO_NOT_SUM_MESSAGE,
   SETTLED_UP_MESSAGE,
   TRANSFERS_HEADING,
   transferLabel,
 } from '../ui/messages';
-import { faCircleCheck, faTriangleExclamation } from '../ui/icons';
+import { CATEGORY_ICONS, faCircleCheck, faTriangleExclamation } from '../ui/icons';
 
 export function SettlementTab() {
   const participants = useAppStore(selectParticipants);
@@ -24,6 +28,10 @@ export function SettlementTab() {
     [participants, expenses],
   );
   const plan = useMemo(() => computeTransfers(balances), [balances]);
+
+  // Same reason: derived on render and never persisted.
+  const breakdown = useMemo(() => categoryTotals(expenses), [expenses]);
+  const groupTotal = useMemo(() => expensesTotal(expenses), [expenses]);
 
   const settled = isSettledUp(balances);
 
@@ -70,6 +78,48 @@ export function SettlementTab() {
           </ul>
         )}
       </section>
+
+      {breakdown.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">
+            {CATEGORY_BREAKDOWN_HEADING}
+          </h2>
+
+          <ul aria-label={CATEGORY_BREAKDOWN_HEADING} className="flex flex-col gap-2">
+            {breakdown.map((row) => (
+              <li
+                key={row.category}
+                data-testid={`category-total-${row.category}`}
+                className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <FontAwesomeIcon
+                    icon={CATEGORY_ICONS[row.category]}
+                    className="w-5 shrink-0 text-slate-500"
+                  />
+                  <span className="truncate text-base">
+                    {CATEGORY_LABELS[row.category]}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-baseline gap-2">
+                  <span
+                    data-testid={`category-amount-${row.category}`}
+                    className="text-base font-semibold"
+                  >
+                    {formatCents(row.totalCents)}
+                  </span>
+                  <span
+                    data-testid={`category-percent-${row.category}`}
+                    className="text-xs text-slate-500"
+                  >
+                    {formatPercent(categoryPercent(row.totalCents, groupTotal))}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-slate-700">{TRANSFERS_HEADING}</h2>

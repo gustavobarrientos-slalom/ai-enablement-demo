@@ -1,3 +1,4 @@
+import { DEFAULT_CATEGORY, isCategory } from './category';
 import { parseAmountToCents, parseTipFixed, parseTipPercent, tipCentsFromPercent } from './money';
 import { buildShares, distributeProportionally, sharesTotal } from './split';
 import {
@@ -24,6 +25,7 @@ export function createEmptyDraft(payerId = ''): ExpenseDraft {
     customAmounts: {},
     tipMode: 'none',
     tipValue: '',
+    category: DEFAULT_CATEGORY,
   };
 }
 
@@ -44,6 +46,7 @@ export function draftFromExpense(expense: Expense): ExpenseDraft {
     customAmounts,
     tipMode: expense.tip?.kind ?? 'none',
     tipValue: tipValueToInput(expense.tip),
+    category: expense.category,
   };
 }
 
@@ -139,6 +142,10 @@ export function validateExpense(
     return err('CONCEPT_TOO_LONG');
   }
 
+  if (!isCategory(draft.category)) {
+    return err('UNKNOWN_CATEGORY');
+  }
+
   const amount = parseAmountToCents(draft.amount);
 
   if (!amount.ok) {
@@ -173,6 +180,7 @@ export function validateExpense(
     splitMode: draft.splitMode,
     shares: shares.value,
     tip: tip.value,
+    category: draft.category,
   });
 }
 

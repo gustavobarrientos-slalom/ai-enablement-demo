@@ -33,6 +33,7 @@ function addEqual(concept: string, amount: string, payerId: string, beneficiaryI
     customAmounts: {},
     tipMode: 'none' as const,
     tipValue: '',
+    category: 'other' as const,
   });
 }
 
@@ -131,6 +132,7 @@ describe('golden scenario rendering', () => {
       },
       tipMode: 'none' as const,
       tipValue: '',
+      category: 'other' as const,
     });
     addEqual('Dessert', '100.01', beto!, everyone);
 
@@ -215,6 +217,7 @@ describe('recalculation', () => {
         customAmounts: {},
         tipMode: 'none' as const,
         tipValue: '',
+        category: 'other' as const,
       });
     });
     rerender(<SettlementTab />);

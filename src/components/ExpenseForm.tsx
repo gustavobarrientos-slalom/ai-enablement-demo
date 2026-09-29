@@ -1,10 +1,14 @@
 import { useId, useMemo, useState, type FormEvent } from 'react';
+import { CATEGORIES } from '../domain/category';
 import { CONCEPT_MAX_LENGTH, createEmptyDraft } from '../domain/expense';
 import { parseAmountToCents, parseTipFixed, parseTipPercent, tipCentsFromPercent } from '../domain/money';
 import { buildCustomShares, splitDifference } from '../domain/split';
-import type { AppError, ExpenseDraft, Participant } from '../domain/types';
+import type { AppError, Category, ExpenseDraft, Participant } from '../domain/types';
 import { formatCents } from '../ui/currency';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { CATEGORY_ICONS } from '../ui/icons';
 import {
+  CATEGORY_LABELS,
   ERROR_MESSAGES,
   TIP_LABEL,
   TIP_MODE_LABELS,
@@ -234,6 +238,34 @@ export function ExpenseForm({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label
+          htmlFor={`${formId}-category`}
+          className="text-sm font-semibold text-slate-700"
+        >
+          Category
+        </label>
+        <div className="flex items-center gap-2">
+          <FontAwesomeIcon
+            icon={CATEGORY_ICONS[draft.category]}
+            data-testid="category-preview"
+            className="w-5 shrink-0 text-slate-500"
+          />
+          <select
+            id={`${formId}-category`}
+            value={draft.category}
+            onChange={(event) => update({ category: event.target.value as Category })}
+            className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+          >
+            {CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {CATEGORY_LABELS[category]}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <fieldset className="flex flex-col gap-2">

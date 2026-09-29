@@ -21,6 +21,15 @@ export type Tip =
   | { kind: 'percent'; percent: number; amountCents: number }
   | { kind: 'fixed'; amountCents: number };
 
+/** Exactly one of the six fixed categories; see CATEGORIES for the order. */
+export type Category =
+  | 'food'
+  | 'drinks'
+  | 'transport'
+  | 'lodging'
+  | 'entertainment'
+  | 'other';
+
 export interface Expense {
   id: string;
   concept: string;
@@ -30,6 +39,7 @@ export interface Expense {
   splitMode: SplitMode;
   shares: Share[];
   tip: Tip | null;
+  category: Category;
 }
 
 /** Unvalidated form input, before it becomes an Expense. */
@@ -42,6 +52,7 @@ export interface ExpenseDraft {
   customAmounts: Record<string, string>;
   tipMode: TipMode;
   tipValue: string;
+  category: Category;
 }
 
 /** Derived from expenses on read; never stored. */
@@ -110,7 +121,8 @@ export type ExpenseError =
   | 'NEGATIVE_TIP'
   | 'TIP_PERCENT_OUT_OF_RANGE'
   | 'TIP_PERCENT_NOT_INTEGER'
-  | 'TIP_TOO_MANY_DECIMALS';
+  | 'TIP_TOO_MANY_DECIMALS'
+  | 'UNKNOWN_CATEGORY';
 
 export type SettlementError = 'NETS_DO_NOT_SUM';
 
