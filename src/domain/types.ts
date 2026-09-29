@@ -3,6 +3,16 @@ export interface Participant {
   name: string;
 }
 
+export interface Contact {
+  id: string;
+  name: string;
+  isMe: boolean;
+}
+
+export interface ContactsState {
+  contacts: Contact[];
+}
+
 export type SplitMode = 'equal' | 'custom';
 
 export interface Share {
@@ -132,8 +142,15 @@ export type EventError = 'EVENT_NOT_FOUND' | 'EVENT_ARCHIVED';
 
 export type ShareError = 'SHARE_INVALID';
 
+export type ContactError =
+  | 'EMPTY_CONTACT_NAME'
+  | 'CONTACT_NAME_TOO_LONG'
+  | 'DUPLICATE_CONTACT_NAME'
+  | 'CONTACT_NOT_FOUND';
+
 export type AppError =
   | GroupError
+  | ContactError
   | ExpenseError
   | SettlementError
   | EventError

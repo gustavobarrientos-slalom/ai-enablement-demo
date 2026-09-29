@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   LEGACY_STORAGE_VERSION,
+  PRE_CONTACTS_STORAGE_VERSION,
   STORAGE_KEY,
   STORAGE_VERSION,
   resetAppStore,
@@ -8,10 +9,14 @@ import {
   selectActiveEvent,
   selectBalances,
   selectCanRemoveParticipant,
+  selectContactSuggestions,
+  selectContacts,
+  selectEligibleContacts,
   selectEventName,
   selectExpenses,
   selectExpensesTotal,
   selectIsGroupValid,
+  selectMeContact,
   selectPaidTransfers,
   selectParticipants,
   selectTransfers,
@@ -179,6 +184,26 @@ describe('importEvent', () => {
     expect(activeEvent().id).not.toBe(originalId);
     expect(JSON.stringify(eventById(originalId))).toBe(originalBytes);
     expect(activeEvent().name).toBe(original.name);
+  });
+
+  it('adds missing imported names to contacts without changing an existing match or Me flag', () => {
+    state().addContact('Ana');
+    state().setMeContact(state().contacts[0]!.id);
+
+    state().importEvent({
+      v: 1,
+      name: 'Shared trip',
+      participants: [
+        { id: 'p1', name: 'ana' },
+        { id: 'p2', name: 'Diego' },
+        { id: 'p3', name: 'Diego' },
+      ],
+      expenses: [],
+      paidTransfers: [],
+    });
+
+    expect(state().contacts.map((contact) => contact.name)).toEqual(['Ana', 'Diego']);
+    expect(selectMeContact(state())?.name).toBe('Ana');
   });
 });
 
@@ -496,6 +521,92 @@ describe('addParticipant', () => {
 
     state().addParticipant('Ana');
     expect(state().lastError).toBeNull();
+  });
+
+  it('creates a contact for a new name but reuses a case-insensitive match', () => {
+    state().addContact('Ana');
+
+    expect(state().addParticipant('  aNA  ')).toBe(true);
+    expect(state().contacts.map((contact) => contact.name)).toEqual(['Ana']);
+    expect(state().addParticipant('Luis')).toBe(true);
+    expect(state().contacts.map((contact) => contact.name)).toEqual(['Ana', 'Luis']);
+    expect(participantNames()).toEqual(['aNA', 'Luis']);
+  });
+
+  it('keeps participant name snapshots after contact rename or deletion', () => {
+    state().addParticipant('Ana');
+    const anaContact = state().contacts[0]!;
+
+    expect(state().renameContact(anaContact.id, 'Ana Garcia')).toBe(true);
+    expect(participantNames()).toEqual(['Ana']);
+
+    state().removeContact(anaContact.id);
+    expect(participantNames()).toEqual(['Ana']);
+  });
+});
+
+describe('contacts state and actions', () => {
+  it('adds, renames and removes contacts with validation', () => {
+    expect(state().addContact('  Ana  ')).toBe(true);
+    const ana = state().contacts[0]!;
+    expect(ana.name).toBe('Ana');
+
+    expect(state().addContact('ANA')).toBe(false);
+    expect(state().lastError).toBe('DUPLICATE_CONTACT_NAME');
+    expect(state().renameContact(ana.id, 'Ana Garcia')).toBe(true);
+    expect(state().contacts[0]!.name).toBe('Ana Garcia');
+
+    state().removeContact(ana.id);
+    expect(state().contacts).toEqual([]);
+  });
+
+  it('sorts contacts alphabetically and selects Me', () => {
+    state().addContact('Sofia');
+    state().addContact('Ana');
+    state().addContact('Luis');
+    const luis = state().contacts.find((contact) => contact.name === 'Luis')!;
+
+    expect(selectContacts(state()).map((contact) => contact.name)).toEqual([
+      'Ana',
+      'Luis',
+      'Sofia',
+    ]);
+    expect(state().setMeContact(luis.id)).toBe(true);
+    expect(selectMeContact(state())).toMatchObject({ id: luis.id, name: 'Luis', isMe: true });
+    expect(selectMeContact(state())?.isMe).toBe(true);
+    expect(state().setMeContact(null)).toBe(true);
+    expect(selectMeContact(state())).toBeNull();
+  });
+});
+
+describe('participants from contacts', () => {
+  it('adds multiple eligible contacts and skips existing participant names', () => {
+    seedActiveEvent();
+    state().addContact('Ana');
+    state().addContact('Luis');
+    state().addContact('Sofia');
+    state().addParticipant('ana');
+
+    const [ana, luis, sofia] = state().contacts;
+    expect(selectEligibleContacts(state()).map((contact) => contact.name)).toEqual([
+      'Luis',
+      'Sofia',
+    ]);
+    expect(state().addParticipantsFromContacts([ana!.id, luis!.id, sofia!.id])).toBe(true);
+    expect(participantNames()).toEqual(['ana', 'Luis', 'Sofia']);
+  });
+
+  it('suggests prefix matches excluding existing participants', () => {
+    seedActiveEvent();
+    state().addContact('Ana');
+    state().addContact('Andres');
+    state().addContact('Luis');
+    state().addParticipant('Ana');
+
+    expect(selectContactSuggestions(state(), 'an').map((contact) => contact.name)).toEqual([
+      'Andres',
+    ]);
+    expect(selectContactSuggestions(state(), '').map((contact) => contact.name)).toEqual([]);
   });
 });
 
@@ -1015,7 +1126,14 @@ describe('persistence', () => {
 
     const stored = JSON.parse(raw!);
     expect(stored.version).toBe(STORAGE_VERSION);
-    expect(Object.keys(stored.state).sort()).toEqual(['events', 'lastActiveEventId']);
+    expect(Object.keys(stored.state).sort()).toEqual([
+      'contacts',
+      'events',
+      'lastActiveEventId',
+    ]);
+    expect(stored.state.contacts.map((contact: { name: string }) => contact.name)).toEqual([
+      'Ana',
+    ]);
     expect(stored.state.events).toHaveLength(1);
     expect(stored.state.events[0].name).toBe('Trip to Oaxaca');
     expect(stored.state.events[0].participants).toHaveLength(1);
@@ -1091,6 +1209,64 @@ describe('persistence', () => {
 
     await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
     expect(state().events).toEqual([]);
+    expect(state().contacts).toEqual([]);
+  });
+
+  it('seeds contacts once from all events in the preceding storage version', async () => {
+    seedActiveEvent('First');
+    state().addParticipant('Ana');
+    state().addParticipant('Luis');
+    seedActiveEvent('Second');
+    state().addParticipant('ana');
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.version = PRE_CONTACTS_STORAGE_VERSION;
+    delete stored.state.contacts;
+
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    await useAppStore.persist.rehydrate();
+
+    expect(state().contacts.map((contact) => contact.name)).toEqual(['Ana', 'Luis']);
+  });
+
+  it('seeds current-version state when its contacts array is absent', async () => {
+    seedActiveEvent('Trip');
+    state().addParticipant('Ana');
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    delete stored.state.contacts;
+
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    await useAppStore.persist.rehydrate();
+
+    expect(state().contacts.map((contact) => contact.name)).toEqual(['Ana']);
+  });
+
+  it('does not reseed when a contacts array already exists, including an empty one', async () => {
+    seedActiveEvent('Trip');
+    state().addParticipant('Ana');
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.state.contacts = [];
+
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    await useAppStore.persist.rehydrate();
+
+    expect(state().contacts).toEqual([]);
+  });
+
+  it('discards malformed contacts without discarding valid events', async () => {
+    seedActiveEvent('Trip');
+    state().addParticipant('Ana');
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    stored.state.contacts = [{ id: '1', name: 'Ana', isMe: true }, { id: '2', name: 'Luis', isMe: true }];
+
+    resetAppStore();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    await expect(useAppStore.persist.rehydrate()).resolves.not.toThrow();
+
+    expect(state().events).toHaveLength(1);
+    expect(state().contacts).toEqual([]);
   });
 
   it('discards an event with a malformed timestamp', async () => {
@@ -1441,7 +1617,11 @@ describe('settlement selectors', () => {
     expect(raw).not.toContain('fromId');
 
     const stored = JSON.parse(raw);
-    expect(Object.keys(stored.state).sort()).toEqual(['events', 'lastActiveEventId']);
+    expect(Object.keys(stored.state).sort()).toEqual([
+      'contacts',
+      'events',
+      'lastActiveEventId',
+    ]);
   });
 
   it('recomputes the same result after a reload', async () => {

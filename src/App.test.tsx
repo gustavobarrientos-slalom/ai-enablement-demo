@@ -62,6 +62,17 @@ afterEach(() => {
 });
 
 describe('event sharing', () => {
+  it('opens the Contacts screen from the Events home and returns to Events', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Contacts' }));
+    expect(screen.getByRole('heading', { name: 'Contacts' })).toBeInTheDocument();
+    expect(screen.getByText('No contacts yet.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Back to events' }));
+    expect(screen.getByRole('heading', { name: 'Events' })).toBeInTheDocument();
+  });
+
   it('copies a hash link with no event data in the query string', async () => {
     const user = userEvent.setup();
     createEvent('Dinner');

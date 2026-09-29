@@ -11,11 +11,13 @@ interface ListRowProps {
   trailing?: ReactNode;
   actions?: readonly { label: string; text: string; icon: IconDefinition; onClick: () => void; destructive?: boolean }[];
   onSelect?: () => void;
+  ariaPressed?: boolean;
+  showChevron?: boolean;
   children?: ReactNode;
   testId?: string;
 }
 
-export function ListRow({ icon, primary, secondary, amount, trailing, actions, onSelect, children, testId }: ListRowProps) {
+export function ListRow({ icon, primary, secondary, amount, trailing, actions, onSelect, ariaPressed, showChevron = true, children, testId }: ListRowProps) {
   const [revealed, setRevealed] = useState(false);
   const [dragDistance, setDragDistance] = useState<number | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -64,7 +66,8 @@ export function ListRow({ icon, primary, secondary, amount, trailing, actions, o
         {secondary && <span className="block text-xs text-text-muted">{secondary}</span>}
       </span>
       {amount && <span className="shrink-0 text-base font-semibold">{amount}</span>}
-      {onSelect && <FontAwesomeIcon icon={faChevronRight} aria-label="Open" className="text-text-muted" />}
+      {trailing}
+      {onSelect && showChevron && <FontAwesomeIcon icon={faChevronRight} aria-label="Open" className="text-text-muted" />}
     </>
   );
 
@@ -134,12 +137,13 @@ export function ListRow({ icon, primary, secondary, amount, trailing, actions, o
               if (revealed) { setRevealed(false); return; }
               onSelect();
             }}
+            aria-pressed={ariaPressed}
             aria-description={hasActions ? 'Swipe left or press Left Arrow to reveal actions' : undefined}
             className="mobile-target flex w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary"
           >
             {inner}
           </button>
-        ) : hasActions ? <div className="flex min-h-11 items-center gap-3 px-4 py-3">{inner}{trailing}</div> : <>{inner}{trailing}</>}
+        ) : hasActions ? <div className="flex min-h-11 items-center gap-3 px-4 py-3">{inner}</div> : <>{inner}</>}
       </div>
       {hasActions && (
         <div className="absolute inset-y-0 right-0 flex" aria-hidden={!revealed}>

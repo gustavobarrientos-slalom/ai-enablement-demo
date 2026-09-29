@@ -241,7 +241,7 @@ describe('migrating a version 4 event collection', () => {
     };
 
     expect(written.version).toBe(STORAGE_VERSION);
-    expect(STORAGE_VERSION).toBe(6);
+    expect(STORAGE_VERSION).toBe(7);
   });
 });
 

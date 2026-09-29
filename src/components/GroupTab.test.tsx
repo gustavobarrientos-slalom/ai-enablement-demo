@@ -140,6 +140,53 @@ describe('adding participants', () => {
     );
     expect(listedNames()).toEqual(['Ana']);
   });
+
+  it('adds several selected contacts and excludes participants already in the event', async () => {
+    const user = userEvent.setup();
+    useAppStore.getState().addContact('Ana');
+    useAppStore.getState().addContact('Luis');
+    useAppStore.getState().addContact('Sofia');
+    useAppStore.getState().addParticipant('Ana');
+    render(<GroupTab />);
+
+    await user.click(screen.getByRole('button', { name: 'Add from contacts' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add from contacts' });
+    const available = within(dialog).getByRole('list', { name: 'Available contacts' });
+    expect(within(available).queryByRole('checkbox', { name: 'Ana' })).toBeNull();
+    await user.click(within(available).getByRole('checkbox', { name: 'Luis' }));
+    await user.click(within(available).getByRole('checkbox', { name: 'Sofia' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add selected contacts' }));
+
+    expect(listedNames()).toEqual(['Ana', 'Luis', 'Sofia']);
+    expect(screen.queryByRole('dialog', { name: 'Add from contacts' })).not.toBeInTheDocument();
+  });
+
+  it('offers prefix suggestions and adds the selected contact using its stored name', async () => {
+    const user = userEvent.setup();
+    useAppStore.getState().addContact('Ana');
+    useAppStore.getState().addContact('Andres');
+    useAppStore.getState().addContact('Luis');
+    render(<GroupTab />);
+
+    await user.click(screen.getByRole('button', { name: 'Add participant' }));
+    await user.type(screen.getByLabelText('Participant name'), 'an');
+    const suggestions = screen.getByRole('listbox', { name: 'Contact suggestions' });
+    expect(within(suggestions).getByRole('option', { name: 'Ana' })).toBeInTheDocument();
+    expect(within(suggestions).getByRole('option', { name: 'Andres' })).toBeInTheDocument();
+    expect(within(suggestions).queryByRole('option', { name: 'Luis' })).toBeNull();
+    await user.click(within(suggestions).getByRole('option', { name: 'Ana' }));
+
+    expect(listedNames()).toEqual(['Ana']);
+  });
+
+  it('creates a contact when a newly typed participant is added', async () => {
+    render(<GroupTab />);
+
+    await addViaUi('Marta');
+
+    expect(listedNames()).toEqual(['Marta']);
+    expect(useAppStore.getState().contacts.map((contact) => contact.name)).toEqual(['Marta']);
+  });
 });
 
 describe('ordering and removal', () => {

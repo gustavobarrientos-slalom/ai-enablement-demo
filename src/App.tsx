@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { decodeShare, encodeShare } from './domain/share';
 import { EventsHome } from './components/EventsHome';
+import { Contacts } from './components/Contacts';
 import { GroupTab } from './components/GroupTab';
 import { ExpensesTab } from './components/ExpensesTab';
 import { SettlementTab } from './components/SettlementTab';
@@ -32,6 +33,7 @@ export function App() {
   const [exiting, setExiting] = useState<{ id: string; name: string; status: string } | null>(null);
   const reducedMotion = usePrefersReducedMotion();
   const [activeTab, setActiveTab] = useState<TabId>('group');
+  const [showContacts, setShowContacts] = useState(false);
   const disabledTabs: TabId[] = isGroupValid ? [] : ['expenses', 'settlement'];
 
   useEffect(() => {
@@ -118,9 +120,9 @@ export function App() {
   return (
     <AppShell
       appBar={<AppBar
-        title={activeEvent?.name ?? exiting?.name ?? 'Split'}
-        subtitle={activeEvent ? EVENT_STATUS_LABELS[activeEvent.status] : exiting?.status ?? 'Your events'}
-        onBack={activeEvent && !exiting ? handleBack : undefined}
+        title={activeEvent?.name ?? exiting?.name ?? (showContacts ? 'Contacts' : 'Split')}
+        subtitle={activeEvent ? EVENT_STATUS_LABELS[activeEvent.status] : exiting?.status ?? (showContacts ? 'Your contacts' : 'Your events')}
+        onBack={activeEvent && !exiting ? handleBack : showContacts ? () => setShowContacts(false) : undefined}
         actions={<>
         {activeEvent && !exiting && (
           <button
@@ -131,6 +133,17 @@ export function App() {
             className="mobile-target md-icon-button shrink-0"
           >
             <FontAwesomeIcon icon={faShareFromSquare} />
+          </button>
+        )}
+        {!activeEvent && !exiting && !showContacts && (
+          <button
+            type="button"
+            aria-label="Contacts"
+            title="Contacts"
+            onClick={() => setShowContacts(true)}
+            className="mobile-target rounded-full px-2 text-sm font-medium text-primary"
+          >
+            Contacts
           </button>
         )}
         <ThemeControl />
@@ -154,6 +167,8 @@ export function App() {
         <div key={activeEvent.id} className={reducedMotion ? '' : 'animate-push-in'}>
           <EventWorkspace activeTab={activeTab} />
         </div>
+      ) : showContacts ? (
+        <Contacts />
       ) : (
         <EventsHome />
       )}
@@ -161,7 +176,7 @@ export function App() {
       bottomBar={activeEvent || exiting
         ? <TabBar activeTab={activeTab} disabledTabs={disabledTabs} onSelect={setActiveTab} />
         : undefined}
-      hasPrimaryAction={!activeEvent || Boolean(isEditable && activeTab !== 'settlement' && !exiting)}
+      hasPrimaryAction={(!activeEvent && !showContacts) || Boolean(isEditable && activeTab !== 'settlement' && !exiting)}
     />
   );
 }

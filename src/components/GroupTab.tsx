@@ -8,6 +8,7 @@ import {
   selectParticipants,
   useAppStore,
 } from '../store/useAppStore';
+import { sortContactsByName } from '../domain/contact';
 import {
   ARCHIVED_READ_ONLY_MESSAGE,
   ERROR_MESSAGES,
@@ -19,6 +20,7 @@ import {
   EVENT_NAME_MAX_LENGTH,
   PARTICIPANT_NAME_MAX_LENGTH,
   canRemoveParticipant,
+  namesMatch,
 } from '../domain/group';
 import type { AppError } from '../domain/types';
 import { BottomSheet } from './shell/BottomSheet';
@@ -29,8 +31,10 @@ import { faUsers } from '../ui/icons';
 export function GroupTab({ showPrimaryAction = true }: { showPrimaryAction?: boolean }) {
   const eventName = useAppStore(selectEventName) ?? '';
   const participants = useAppStore(selectParticipants);
+  const contacts = useAppStore((state) => state.contacts);
   const setEventName = useAppStore((state) => state.setEventName);
   const addParticipant = useAppStore((state) => state.addParticipant);
+  const addParticipantsFromContacts = useAppStore((state) => state.addParticipantsFromContacts);
   const removeParticipant = useAppStore((state) => state.removeParticipant);
   const isGroupValid = useAppStore(selectIsGroupValid);
   const expenses = useAppStore(selectExpenses);
@@ -41,6 +45,8 @@ export function GroupTab({ showPrimaryAction = true }: { showPrimaryAction?: boo
   const [participantDraft, setParticipantDraft] = useState('');
   const [participantError, setParticipantError] = useState<AppError | null>(null);
   const [adding, setAdding] = useState(false);
+  const [choosingContacts, setChoosingContacts] = useState(false);
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,8 +65,11 @@ export function GroupTab({ showPrimaryAction = true }: { showPrimaryAction?: boo
 
   function handleAddParticipant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    commitParticipant(participantDraft);
+  }
 
-    if (addParticipant(participantDraft)) {
+  function commitParticipant(name: string) {
+    if (addParticipant(name)) {
       setParticipantDraft('');
       setParticipantError(null);
       setAdding(false);
@@ -69,6 +78,16 @@ export function GroupTab({ showPrimaryAction = true }: { showPrimaryAction?: boo
 
     setParticipantError(useAppStore.getState().lastError);
   }
+
+  const eligibleContacts = sortContactsByName(contacts).filter(
+    (contact) => !participants.some((participant) => namesMatch(participant.name, contact.name)),
+  );
+  const normalizedDraft = participantDraft.trim().toLocaleLowerCase('en');
+  const suggestions = normalizedDraft
+    ? eligibleContacts.filter((contact) =>
+        contact.name.toLocaleLowerCase('en').startsWith(normalizedDraft),
+      )
+    : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -112,9 +131,21 @@ export function GroupTab({ showPrimaryAction = true }: { showPrimaryAction?: boo
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="md-section-title">
-          Participants ({participants.length})
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="md-section-title">Participants ({participants.length})</h2>
+          {isEditable && eligibleContacts.length > 0 && (
+            <button
+              type="button"
+              className="mobile-target md-outline-button shrink-0 px-3 text-sm"
+              onClick={() => {
+                setSelectedContactIds([]);
+                setChoosingContacts(true);
+              }}
+            >
+              Add from contacts
+            </button>
+          )}
+        </div>
 
         <BottomSheet open={adding} title="New participant" onClose={() => setAdding(false)}>
         <form onSubmit={handleAddParticipant} className="flex flex-col gap-3" noValidate>
@@ -128,10 +159,32 @@ export function GroupTab({ showPrimaryAction = true }: { showPrimaryAction?: boo
               aria-invalid={participantError !== null}
               aria-describedby={participantError ? 'participant-error' : undefined}
               onChange={(event) => setParticipantDraft(event.target.value)}
+              autoComplete="off"
               className="mobile-input md-field"
             />
             <label htmlFor="participant-name" className="md-field-label">Participant name</label>
           </div>
+          {suggestions.length > 0 && (
+            <ul
+              role="listbox"
+              aria-label="Contact suggestions"
+              className="md-card divide-y divide-divider"
+            >
+              {suggestions.map((contact) => (
+                <li key={contact.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    className="mobile-target w-full px-4 py-3 text-left hover:bg-surface-muted"
+                    onClick={() => commitParticipant(contact.name)}
+                  >
+                    {contact.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           {participantError && (
             <p id="participant-error" role="alert" className="text-sm text-danger-fg">
               {ERROR_MESSAGES[participantError]}
@@ -146,6 +199,50 @@ export function GroupTab({ showPrimaryAction = true }: { showPrimaryAction?: boo
             <span className="ml-2">Add participant</span>
           </button>
         </form>
+        </BottomSheet>
+
+        <BottomSheet
+          open={choosingContacts}
+          title="Add from contacts"
+          onClose={() => setChoosingContacts(false)}
+        >
+          <div className="flex flex-col gap-3">
+            <ul aria-label="Available contacts" className="md-card divide-y divide-divider">
+              {eligibleContacts.map((contact) => (
+                <li key={contact.id} className="flex min-h-12 items-center px-4">
+                  <label className="flex w-full items-center gap-3">
+                    <input
+                      type="checkbox"
+                      aria-label={contact.name}
+                      checked={selectedContactIds.includes(contact.id)}
+                      onChange={(event) =>
+                        setSelectedContactIds((current) =>
+                          event.target.checked
+                            ? [...current, contact.id]
+                            : current.filter((id) => id !== contact.id),
+                        )
+                      }
+                      className="mobile-input md-check"
+                    />
+                    <span>{contact.name}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              disabled={selectedContactIds.length === 0}
+              className="mobile-target md-filled-button disabled:opacity-50"
+              onClick={() => {
+                if (addParticipantsFromContacts(selectedContactIds)) {
+                  setChoosingContacts(false);
+                  setSelectedContactIds([]);
+                }
+              }}
+            >
+              Add selected contacts
+            </button>
+          </div>
         </BottomSheet>
 
         {participants.length === 0 ? (

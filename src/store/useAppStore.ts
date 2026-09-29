@@ -4,8 +4,17 @@ import {
   addParticipant,
   canRemoveParticipant,
   isGroupValid,
+  namesMatch,
   removeParticipant,
 } from '../domain/group';
+import {
+  addContact,
+  parseContactsState,
+  removeContact,
+  renameContact,
+  setMeContact,
+  sortContactsByName,
+} from '../domain/contact';
 import {
   createEmptyEventsState,
   createEvent,
@@ -34,6 +43,7 @@ import type { SharePayload } from '../domain/share';
 import type {
   AppError,
   Balance,
+  Contact,
   EventFilter,
   Expense,
   ExpenseDraft,
@@ -45,8 +55,10 @@ import type {
 } from '../domain/types';
 
 export const STORAGE_KEY = 'split:v2';
-export const STORAGE_VERSION = 6;
+export const STORAGE_VERSION = 7;
 
+/** The event collection before the contacts directory was added. */
+export const PRE_CONTACTS_STORAGE_VERSION = 6;
 /** The event collection with expense categories but no payment checklist. */
 export const PRE_PAYMENT_STORAGE_VERSION = 5;
 /** The event collection that predates categories. */
@@ -72,6 +84,7 @@ const NO_EXPENSES: Expense[] = [];
 
 export interface AppState {
   events: SplitEvent[];
+  contacts: Contact[];
   /** Transient view selection. `null` shows the Events home. */
   activeEventId: string | null;
   /** Persisted so a reload reopens the event the user was last in. */
@@ -88,9 +101,14 @@ export interface AppState {
   unarchiveEvent: (id: string) => boolean;
   deleteEvent: (id: string) => void;
   setEventFilter: (filter: EventFilter) => void;
+  addContact: (raw: string) => boolean;
+  renameContact: (id: string, raw: string) => boolean;
+  removeContact: (id: string) => void;
+  setMeContact: (id: string | null) => boolean;
 
   setEventName: (raw: string) => boolean;
   addParticipant: (raw: string) => boolean;
+  addParticipantsFromContacts: (ids: readonly string[]) => boolean;
   removeParticipant: (id: string) => boolean;
   addExpense: (draft: ExpenseDraft) => boolean;
   updateExpense: (id: string, draft: ExpenseDraft) => boolean;
@@ -99,17 +117,34 @@ export interface AppState {
   clearError: () => void;
 }
 
-type PersistedState = Pick<AppState, 'events' | 'lastActiveEventId'>;
+type PersistedState = Pick<AppState, 'events' | 'lastActiveEventId' | 'contacts'>;
 
 type EventChange = Result<SplitEvent> | SplitEvent;
 
 function initialState() {
   return {
     ...createEmptyEventsState(),
+    contacts: [],
     activeEventId: null,
     eventFilter: 'all' as EventFilter,
     lastError: null,
   };
+}
+
+function contactsFromEvents(events: readonly SplitEvent[]): Contact[] {
+  const contacts: Contact[] = [];
+
+  for (const event of events) {
+    for (const participant of event.participants) {
+      if (contacts.some((contact) => namesMatch(contact.name, participant.name))) {
+        continue;
+      }
+
+      contacts.push({ id: createId(), name: participant.name, isMe: false });
+    }
+  }
+
+  return contacts;
 }
 
 function replaceEvent(events: readonly SplitEvent[], next: SplitEvent): SplitEvent[] {
@@ -239,8 +274,17 @@ export const useAppStore = create<AppState>()(
             paidTransfers: payload.paidTransfers.map((transfer) => ({ ...transfer })),
           };
 
+          const contacts = get().contacts.slice();
+          for (const participant of payload.participants) {
+            if (!contacts.some((contact) => namesMatch(contact.name, participant.name))) {
+              const added = addContact(contacts, participant.name, createId());
+              if (added.ok) contacts.push(added.value[added.value.length - 1]!);
+            }
+          }
+
           set({
             events: [...get().events, event],
+            contacts,
             activeEventId: event.id,
             lastActiveEventId: event.id,
             lastError: null,
@@ -283,19 +327,138 @@ export const useAppStore = create<AppState>()(
 
         setEventFilter: (filter) => set({ eventFilter: filter }),
 
+        addContact: (raw) => {
+          const result = addContact(get().contacts, raw, createId());
+          if (!result.ok) {
+            set({ lastError: result.error });
+            return false;
+          }
+
+          set({ contacts: result.value, lastError: null });
+          return true;
+        },
+
+        renameContact: (id, raw) => {
+          const result = renameContact(get().contacts, id, raw);
+          if (!result.ok) {
+            set({ lastError: result.error });
+            return false;
+          }
+
+          set({ contacts: result.value, lastError: null });
+          return true;
+        },
+
+        removeContact: (id) =>
+          set({ contacts: removeContact(get().contacts, id), lastError: null }),
+
+        setMeContact: (id) => {
+          const result = setMeContact(get().contacts, id);
+          if (!result.ok) {
+            set({ lastError: result.error });
+            return false;
+          }
+
+          set({ contacts: result.value, lastError: null });
+          return true;
+        },
+
         setEventName: (raw) =>
           updateActiveEvent((event) => renameEvent(event, raw, clock())),
 
-        addParticipant: (raw) =>
-          updateActiveEvent((event) => {
-            const result = addParticipant(event.participants, raw, createId());
+        addParticipant: (raw) => {
+          const { events, activeEventId, contacts } = get();
+          const event = findEvent(events, activeEventId);
 
-            if (!result.ok) {
-              return result;
+          if (!event) {
+            set({ lastError: 'EVENT_NOT_FOUND' });
+            return false;
+          }
+
+          if (!isEventEditable(event)) {
+            set({ lastError: 'EVENT_ARCHIVED' });
+            return false;
+          }
+
+          const result = addParticipant(event.participants, raw, createId());
+          if (!result.ok) {
+            set({ lastError: result.error });
+            return false;
+          }
+
+          const addedName = result.value[result.value.length - 1]!.name;
+          const matchingContact = contacts.some((contact) =>
+            namesMatch(contact.name, addedName),
+          );
+          let nextContacts = contacts;
+          if (!matchingContact) {
+            const contactResult = addContact(contacts, addedName, createId());
+            if (!contactResult.ok) {
+              set({ lastError: contactResult.error });
+              return false;
+            }
+            nextContacts = contactResult.value;
+          }
+
+          set({
+            events: replaceEvent(events, {
+              ...withReconciledPaidTransfers({
+                ...touchEvent(event, clock()),
+                participants: result.value,
+              }),
+            }),
+            contacts: nextContacts,
+            lastError: null,
+          });
+          return true;
+        },
+
+        addParticipantsFromContacts: (ids) => {
+          const { events, activeEventId, contacts } = get();
+          const event = findEvent(events, activeEventId);
+
+          if (!event) {
+            set({ lastError: 'EVENT_NOT_FOUND' });
+            return false;
+          }
+
+          if (!isEventEditable(event)) {
+            set({ lastError: 'EVENT_ARCHIVED' });
+            return false;
+          }
+
+          let participants = event.participants;
+          for (const id of ids) {
+            const contact = contacts.find((candidate) => candidate.id === id);
+            if (
+              !contact ||
+              participants.some((participant) => namesMatch(participant.name, contact.name))
+            ) {
+              continue;
             }
 
-            return { ...touchEvent(event, clock()), participants: result.value };
-          }),
+            const result = addParticipant(participants, contact.name, createId());
+            if (!result.ok) {
+              set({ lastError: result.error });
+              return false;
+            }
+            participants = result.value;
+          }
+
+          if (participants === event.participants) {
+            set({ lastError: null });
+            return true;
+          }
+
+          set({
+            events: replaceEvent(events, withReconciledPaidTransfers({
+              ...touchEvent(event, clock()),
+              participants,
+            })),
+            lastError: null,
+          });
+          return true;
+        },
 
         removeParticipant: (id) =>
           updateActiveEvent((event) => {
@@ -407,6 +570,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state): PersistedState => ({
         events: state.events,
         lastActiveEventId: state.lastActiveEventId,
+        contacts: state.contacts,
       }),
       /**
        * Recognized predecessors are normalized before strict merge parsing.
@@ -419,6 +583,10 @@ export const useAppStore = create<AppState>()(
           return migrateEventsPaidTransfers(migrateEventsCategories(persisted));
         }
 
+        if (version === PRE_CONTACTS_STORAGE_VERSION) {
+          return persisted;
+        }
+
         if (version === PRE_PAYMENT_STORAGE_VERSION) {
           return migrateEventsPaidTransfers(persisted);
         }
@@ -427,14 +595,24 @@ export const useAppStore = create<AppState>()(
           return migrateLegacyGroupState(persisted, createId(), clock());
         }
 
-        return createEmptyEventsState();
+        return { ...createEmptyEventsState(), contacts: [] };
       },
       merge: (persisted, current) => {
         const parsed = parseEventsState(persisted) ?? createEmptyEventsState();
+        const source =
+          typeof persisted === 'object' && persisted !== null
+            ? (persisted as Record<string, unknown>)
+            : {};
+        const hasContacts = Object.prototype.hasOwnProperty.call(source, 'contacts');
+        const parsedContacts = parseContactsState({ contacts: source.contacts });
+        const contacts = hasContacts
+          ? parsedContacts?.contacts ?? []
+          : contactsFromEvents(parsed.events);
 
         return {
           ...current,
           ...parsed,
+          contacts,
           // Reopening the last active event is what makes a reload feel
           // continuous; an orphan id was already cleared during parsing.
           activeEventId: parsed.lastActiveEventId,
@@ -467,6 +645,34 @@ export function selectEventName(state: AppState): string | null {
 
 export function selectParticipants(state: AppState): Participant[] {
   return selectActiveEvent(state)?.participants ?? NO_PARTICIPANTS;
+}
+
+export function selectContacts(state: AppState): Contact[] {
+  return sortContactsByName(state.contacts);
+}
+
+export function selectMeContact(state: AppState): Contact | null {
+  return state.contacts.find((contact) => contact.isMe) ?? null;
+}
+
+export function selectEligibleContacts(state: AppState): Contact[] {
+  const participants = selectParticipants(state);
+  return selectContacts(state).filter(
+    (contact) =>
+      !participants.some((participant) => namesMatch(participant.name, contact.name)),
+  );
+}
+
+export function selectContactSuggestions(
+  state: AppState,
+  prefix: string,
+): Contact[] {
+  const normalizedPrefix = prefix.trim().toLocaleLowerCase('en');
+  if (!normalizedPrefix) return [];
+
+  return selectEligibleContacts(state).filter((contact) =>
+    contact.name.toLocaleLowerCase('en').startsWith(normalizedPrefix),
+  );
 }
 
 export function selectExpenses(state: AppState): Expense[] {
