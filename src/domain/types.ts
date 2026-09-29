@@ -130,7 +130,14 @@ export type SettlementError = 'NETS_DO_NOT_SUM';
 
 export type EventError = 'EVENT_NOT_FOUND' | 'EVENT_ARCHIVED';
 
-export type AppError = GroupError | ExpenseError | SettlementError | EventError;
+export type ShareError = 'SHARE_INVALID';
+
+export type AppError =
+  | GroupError
+  | ExpenseError
+  | SettlementError
+  | EventError
+  | ShareError;
 
 export type Result<T, E = AppError> =
   | { ok: true; value: T }

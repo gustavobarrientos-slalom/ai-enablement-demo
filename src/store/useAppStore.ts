@@ -30,6 +30,7 @@ import {
 } from '../domain/paidTransfers';
 import { createId } from '../lib/ids';
 import { systemClock, type Clock } from '../lib/clock';
+import type { SharePayload } from '../domain/share';
 import type {
   AppError,
   Balance,
@@ -79,6 +80,7 @@ export interface AppState {
   lastError: AppError | null;
 
   createEvent: (name?: string) => string | null;
+  importEvent: (payload: SharePayload) => boolean;
   openEvent: (id: string) => boolean;
   closeEvent: () => void;
   renameEvent: (id: string, raw: string) => boolean;
@@ -218,6 +220,32 @@ export const useAppStore = create<AppState>()(
           });
 
           return event.id;
+        },
+
+        importEvent: (payload) => {
+          const now = clock();
+          const event: SplitEvent = {
+            id: createId(),
+            name: payload.name,
+            status: 'open',
+            createdAt: now,
+            updatedAt: now,
+            participants: payload.participants.map((participant) => ({ ...participant })),
+            expenses: payload.expenses.map((expense) => ({
+              ...expense,
+              shares: expense.shares.map((share) => ({ ...share })),
+              tip: expense.tip ? { ...expense.tip } : null,
+            })),
+            paidTransfers: payload.paidTransfers.map((transfer) => ({ ...transfer })),
+          };
+
+          set({
+            events: [...get().events, event],
+            activeEventId: event.id,
+            lastActiveEventId: event.id,
+            lastError: null,
+          });
+          return true;
         },
 
         openEvent: (id) => {

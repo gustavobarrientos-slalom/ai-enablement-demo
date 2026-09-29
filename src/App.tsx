@@ -1,18 +1,87 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { decodeShare, encodeShare } from './domain/share';
 import { EventsHome } from './components/EventsHome';
 import { GroupTab } from './components/GroupTab';
 import { ExpensesTab } from './components/ExpensesTab';
 import { SettlementTab } from './components/SettlementTab';
 import { TabBar, type TabId } from './components/TabBar';
 import { selectActiveEvent, selectIsGroupValid, useAppStore } from './store/useAppStore';
-import { BACK_TO_EVENTS_LABEL, EVENT_STATUS_LABELS } from './ui/messages';
-import { faArrowLeft, faUsers } from './ui/icons';
+import { copyText } from './lib/clipboard';
+import { buildShareUrl, readSharePayload } from './lib/shareUrl';
+import {
+  BACK_TO_EVENTS_LABEL,
+  EVENT_IMPORTED,
+  EVENT_STATUS_LABELS,
+  INVALID_SHARE_LINK,
+  LINK_COPIED,
+} from './ui/messages';
+import { faArrowLeft, faShareFromSquare, faUsers } from './ui/icons';
 
 export function App() {
   const activeEvent = useAppStore(selectActiveEvent);
   const isGroupValid = useAppStore(selectIsGroupValid);
   const closeEvent = useAppStore((state) => state.closeEvent);
+  const importEvent = useAppStore((state) => state.importEvent);
+  const [message, setMessage] = useState<string | null>(null);
+  const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showMessage(nextMessage: string): void {
+    if (messageTimer.current !== null) {
+      clearTimeout(messageTimer.current);
+    }
+
+    setMessage(nextMessage);
+    messageTimer.current = setTimeout(() => setMessage(null), 2500);
+  }
+
+  useEffect(() => {
+    const payload = readSharePayload(window.location.hash);
+
+    if (payload === null) {
+      return;
+    }
+
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${window.location.search}`,
+    );
+
+    const decoded = decodeShare(payload);
+
+    if (!decoded.ok || !importEvent(decoded.value)) {
+      showMessage(INVALID_SHARE_LINK);
+      return;
+    }
+
+    showMessage(EVENT_IMPORTED);
+  }, [importEvent]);
+
+  useEffect(
+    () => () => {
+      if (messageTimer.current !== null) {
+        clearTimeout(messageTimer.current);
+      }
+    },
+    [],
+  );
+
+  async function shareActiveEvent(): Promise<void> {
+    if (!activeEvent) {
+      return;
+    }
+
+    const url = buildShareUrl(
+      window.location.origin,
+      window.location.pathname,
+      encodeShare(activeEvent),
+    );
+
+    if (await copyText(url)) {
+      showMessage(LINK_COPIED);
+    }
+  }
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 px-3 py-4 sm:px-4">
@@ -36,7 +105,23 @@ export function App() {
               : 'Your events'}
           </p>
         </div>
+        {activeEvent && (
+          <button
+            type="button"
+            onClick={shareActiveEvent}
+            className="ml-auto flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            <FontAwesomeIcon icon={faShareFromSquare} />
+            Share
+          </button>
+        )}
       </header>
+
+      {message && (
+        <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {message}
+        </p>
+      )}
 
       {activeEvent ? (
         // Keyed by event id so per-tab drafts never leak between events.

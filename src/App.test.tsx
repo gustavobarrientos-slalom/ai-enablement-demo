@@ -1,0 +1,167 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { App } from './App';
+import { decodeShare, encodeShare } from './domain/share';
+import { STORAGE_KEY, resetAppStore, useAppStore } from './store/useAppStore';
+import { LINK_COPIED, EVENT_IMPORTED, INVALID_SHARE_LINK } from './ui/messages';
+
+function setShareHash(payload: string): void {
+  window.history.replaceState(
+    null,
+    '',
+    `${window.location.pathname}${window.location.search}#share=${payload}`,
+  );
+}
+
+function createEvent(name: string): string {
+  const id = useAppStore.getState().createEvent(name);
+
+  if (id === null) {
+    throw new Error(`failed to create ${name}`);
+  }
+
+  return id;
+}
+
+const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(
+  navigator,
+  'clipboard',
+);
+
+beforeEach(() => {
+  localStorage.clear();
+  resetAppStore();
+  window.history.replaceState(null, '', '/ai-enablement-demo/');
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  if (originalClipboardDescriptor) {
+    Object.defineProperty(navigator, 'clipboard', originalClipboardDescriptor);
+  } else {
+    Reflect.deleteProperty(navigator, 'clipboard');
+  }
+  Reflect.deleteProperty(document, 'execCommand');
+  window.history.replaceState(null, '', '/ai-enablement-demo/');
+  vi.restoreAllMocks();
+});
+
+describe('event sharing', () => {
+  it('copies a hash link with no event data in the query string', async () => {
+    const user = userEvent.setup();
+    createEvent('Dinner');
+    useAppStore.getState().addParticipant('Ana');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Share' }));
+
+    expect(writeText).toHaveBeenCalledOnce();
+    const copiedUrl = new URL(String(writeText.mock.calls[0]?.[0]));
+    expect(copiedUrl.pathname).toBe('/ai-enablement-demo/');
+    expect(copiedUrl.search).toBe('');
+    expect(copiedUrl.hash).toMatch(/^#share=/);
+    expect(decodeShare(copiedUrl.hash.slice('#share='.length)).ok).toBe(true);
+    expect(screen.getByRole('status')).toHaveTextContent(LINK_COPIED);
+  });
+
+  it('dismisses the successful copy message after a short delay', async () => {
+    vi.useFakeTimers();
+    createEvent('Dinner');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Share' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('status')).toHaveTextContent(LINK_COPIED);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+
+    expect(screen.queryByRole('status')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('imports a valid link as a new active event and clears the hash', async () => {
+    const firstId = createEvent('First');
+    useAppStore.getState().addParticipant('Ana');
+    const secondId = createEvent('Second');
+    useAppStore.getState().addParticipant('Luis');
+    const originals = [firstId, secondId].map((id) =>
+      JSON.stringify(useAppStore.getState().events.find((event) => event.id === id)),
+    );
+    const sharedEvent = useAppStore.getState().events.find((event) => event.id === secondId)!;
+    setShareHash(encodeShare(sharedEvent));
+
+    render(<App />);
+
+    expect(await screen.findByRole('status')).toHaveTextContent(EVENT_IMPORTED);
+    expect(window.location.hash).toBe('');
+    expect(useAppStore.getState().events).toHaveLength(3);
+    expect(useAppStore.getState().activeEventId).not.toBe(secondId);
+    expect(
+      useAppStore.getState().events.slice(0, 2).map((event) => JSON.stringify(event)),
+    ).toEqual(originals);
+  });
+
+  it('does not import again when remounted after the URL hash is cleared', async () => {
+    const id = createEvent('Shared');
+    useAppStore.getState().addParticipant('Ana');
+    const event = useAppStore.getState().events.find((candidate) => candidate.id === id)!;
+    setShareHash(encodeShare(event));
+
+    const firstMount = render(<App />);
+    expect(await screen.findByRole('status')).toHaveTextContent(EVENT_IMPORTED);
+    firstMount.unmount();
+
+    render(<App />);
+    expect(useAppStore.getState().events).toHaveLength(2);
+    expect(window.location.hash).toBe('');
+  });
+
+  it('clears an invalid link without changing stored or persisted state', async () => {
+    const id = createEvent('Existing');
+    useAppStore.getState().addParticipant('Ana');
+    const eventsBefore = useAppStore.getState().events;
+    const activeIdBefore = useAppStore.getState().activeEventId;
+    const persistedBefore = localStorage.getItem(STORAGE_KEY);
+    setShareHash('not-valid-compressed-data');
+
+    render(<App />);
+
+    expect(await screen.findByRole('status')).toHaveTextContent(INVALID_SHARE_LINK);
+    expect(window.location.hash).toBe('');
+    expect(useAppStore.getState().events).toBe(eventsBefore);
+    expect(useAppStore.getState().activeEventId).toBe(activeIdBefore);
+    expect(useAppStore.getState().events[0]?.id).toBe(id);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(persistedBefore);
+  });
+
+  it('shows no success message when clipboard copying fails', async () => {
+    const user = userEvent.setup();
+    createEvent('Dinner');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
+
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Share' }));
+
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});

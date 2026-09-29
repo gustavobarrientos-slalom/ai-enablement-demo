@@ -20,6 +20,7 @@ import {
   useAppStore,
 } from './useAppStore';
 import { DEFAULT_EVENT_NAME } from '../domain/group';
+import { decodeShare, encodeShare } from '../domain/share';
 import { fixedClock } from '../lib/clock';
 import { makeExpense, seedActiveEvent, setActiveEventData } from '../test/factories';
 import type { SplitEvent } from '../domain/types';
@@ -127,6 +128,57 @@ describe('createEvent', () => {
     expect(state().events).toHaveLength(2);
     expect(state().activeEventId).toBe(second);
     expect(eventById(first!).name).toBe('First');
+  });
+});
+
+describe('importEvent', () => {
+  it('appends an imported event without changing existing events', () => {
+    setStoreClock(fixedClock('2026-04-05T12:00:00.000Z'));
+    const firstId = seedActiveEvent('First');
+    state().addParticipant('Ana');
+    const secondId = seedActiveEvent('Second');
+    state().addParticipant('Luis');
+    const originalFirst = JSON.stringify(eventById(firstId));
+    const originalSecond = JSON.stringify(eventById(secondId));
+
+    const imported = state().importEvent({
+      v: 1,
+      name: 'Shared trip',
+      participants: [{ id: 'shared-p1', name: 'Beto' }],
+      expenses: [],
+      paidTransfers: [],
+    });
+    const importedEvent = activeEvent();
+
+    expect(imported).toBe(true);
+    expect(state().events).toHaveLength(3);
+    expect(JSON.stringify(eventById(firstId))).toBe(originalFirst);
+    expect(JSON.stringify(eventById(secondId))).toBe(originalSecond);
+    expect(importedEvent.name).toBe('Shared trip');
+    expect(importedEvent.status).toBe('open');
+    expect(importedEvent.createdAt).toBe('2026-04-05T12:00:00.000Z');
+    expect(importedEvent.updatedAt).toBe('2026-04-05T12:00:00.000Z');
+    expect(state().lastActiveEventId).toBe(importedEvent.id);
+  });
+
+  it('creates a separate event when importing data from an existing event', () => {
+    const originalId = seedActiveEvent('Original');
+    state().addParticipant('Ana');
+    const original = eventById(originalId);
+    const decoded = decodeShare(encodeShare(original));
+
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) {
+      throw new Error('expected the original event to encode');
+    }
+
+    const originalBytes = JSON.stringify(original);
+    state().importEvent(decoded.value);
+
+    expect(state().events).toHaveLength(2);
+    expect(activeEvent().id).not.toBe(originalId);
+    expect(JSON.stringify(eventById(originalId))).toBe(originalBytes);
+    expect(activeEvent().name).toBe(original.name);
   });
 });
 

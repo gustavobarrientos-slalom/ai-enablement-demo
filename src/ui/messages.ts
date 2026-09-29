@@ -55,7 +55,12 @@ export const ERROR_MESSAGES: Record<AppError, string> = {
   UNKNOWN_CATEGORY: 'Select a valid category',
   EVENT_NOT_FOUND: 'That event is no longer available',
   EVENT_ARCHIVED: 'This event is archived and cannot be edited',
+  SHARE_INVALID: 'This link is invalid',
 };
+
+export const LINK_COPIED = 'Link copied';
+export const EVENT_IMPORTED = 'Event imported';
+export const INVALID_SHARE_LINK = 'This link is invalid';
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   food: 'Food',
