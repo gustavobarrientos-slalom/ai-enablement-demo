@@ -1,0 +1,175 @@
+import { useEffect, useState, type FormEvent } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  selectIsGroupValid,
+  useAppStore,
+} from '../store/useAppStore';
+import {
+  ERROR_MESSAGES,
+  INVALID_GROUP_HINT,
+  PARTICIPANT_HAS_EXPENSES_MESSAGE,
+} from '../ui/messages';
+import { faCircleInfo, faTrash, faUserPlus } from '../ui/icons';
+import {
+  EVENT_NAME_MAX_LENGTH,
+  PARTICIPANT_NAME_MAX_LENGTH,
+  canRemoveParticipant,
+} from '../domain/group';
+import type { GroupError } from '../domain/types';
+
+export function GroupTab() {
+  const eventName = useAppStore((state) => state.eventName);
+  const participants = useAppStore((state) => state.participants);
+  const setEventName = useAppStore((state) => state.setEventName);
+  const addParticipant = useAppStore((state) => state.addParticipant);
+  const removeParticipant = useAppStore((state) => state.removeParticipant);
+  const isGroupValid = useAppStore(selectIsGroupValid);
+  const expenses = useAppStore((state) => state.expenses);
+
+  const [eventNameDraft, setEventNameDraft] = useState(eventName);
+  const [eventNameError, setEventNameError] = useState<GroupError | null>(null);
+  const [participantDraft, setParticipantDraft] = useState('');
+  const [participantError, setParticipantError] = useState<GroupError | null>(null);
+
+  useEffect(() => {
+    setEventNameDraft(eventName);
+  }, [eventName]);
+
+  function commitEventName() {
+    if (setEventName(eventNameDraft)) {
+      setEventNameError(null);
+      return;
+    }
+
+    setEventNameError(useAppStore.getState().lastError);
+    setEventNameDraft(eventName);
+  }
+
+  function handleAddParticipant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (addParticipant(participantDraft)) {
+      setParticipantDraft('');
+      setParticipantError(null);
+      return;
+    }
+
+    setParticipantError(useAppStore.getState().lastError);
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-2">
+        <label htmlFor="event-name" className="text-sm font-semibold text-slate-700">
+          Event name
+        </label>
+        <input
+          id="event-name"
+          type="text"
+          value={eventNameDraft}
+          maxLength={EVENT_NAME_MAX_LENGTH + 1}
+          aria-invalid={eventNameError !== null}
+          aria-describedby={eventNameError ? 'event-name-error' : undefined}
+          onChange={(event) => setEventNameDraft(event.target.value)}
+          onBlur={commitEventName}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.currentTarget.blur();
+            }
+          }}
+          className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+        />
+        {eventNameError && (
+          <p id="event-name-error" role="alert" className="text-sm text-red-600">
+            {ERROR_MESSAGES[eventNameError]}
+          </p>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-slate-700">
+          Participants ({participants.length})
+        </h2>
+
+        <form onSubmit={handleAddParticipant} className="flex gap-2" noValidate>
+          <label htmlFor="participant-name" className="sr-only">
+            Participant name
+          </label>
+          <input
+            id="participant-name"
+            type="text"
+            value={participantDraft}
+            placeholder="Name"
+            maxLength={PARTICIPANT_NAME_MAX_LENGTH + 1}
+            aria-invalid={participantError !== null}
+            aria-describedby={participantError ? 'participant-error' : undefined}
+            onChange={(event) => setParticipantDraft(event.target.value)}
+            className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-base focus:border-slate-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            aria-label="Add participant"
+            className="min-h-11 min-w-11 rounded-lg bg-slate-900 px-3 text-white"
+          >
+            <FontAwesomeIcon icon={faUserPlus} />
+          </button>
+        </form>
+
+        {participantError && (
+          <p id="participant-error" role="alert" className="text-sm text-red-600">
+            {ERROR_MESSAGES[participantError]}
+          </p>
+        )}
+
+        {participants.length === 0 ? (
+          <p className="text-sm text-slate-500">No participants yet.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {participants.map((participant) => {
+              const removable = canRemoveParticipant(participant.id, expenses);
+
+              return (
+                <li
+                  key={participant.id}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-base">{participant.name}</p>
+                    {!removable && (
+                      <p className="text-xs text-slate-500">
+                        {PARTICIPANT_HAS_EXPENSES_MESSAGE}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!removable}
+                    aria-disabled={!removable}
+                    aria-label={`Remove ${participant.name}`}
+                    title={removable ? undefined : PARTICIPANT_HAS_EXPENSES_MESSAGE}
+                    onClick={() => removeParticipant(participant.id)}
+                    className={[
+                      'min-h-11 min-w-11 shrink-0 rounded-lg px-3 text-slate-600',
+                      removable
+                        ? 'hover:bg-slate-100 hover:text-red-600'
+                        : 'cursor-not-allowed opacity-40',
+                    ].join(' ')}
+                  >
+                    <FontAwesomeIcon icon={faTrash} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {!isGroupValid && (
+          <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <FontAwesomeIcon icon={faCircleInfo} />
+            {INVALID_GROUP_HINT}
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
