@@ -116,6 +116,20 @@
     color: transparent;
   }
 
+  /* WebKit (Safari, macOS/Tauri webview) ignores padding and height on native selects. */
+  .md-select {
+    @apply cursor-pointer appearance-none pr-11;
+    -webkit-appearance: none;
+  }
+
+  .md-select-chevron {
+    @apply pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-text-muted;
+  }
+
+  .md-select:focus ~ .md-select-chevron {
+    @apply text-primary;
+  }
+
   .md-field-compact {
     @apply px-2 py-1 text-right;
     min-height: 2.75rem;

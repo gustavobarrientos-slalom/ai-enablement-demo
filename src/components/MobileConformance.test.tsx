@@ -197,6 +197,14 @@ describe('mobile screen conformance', () => {
     for (const label of ['Concept', 'Amount']) {
       expect(screen.getByRole('textbox', { name: label })).toHaveAttribute('placeholder', ' ');
     }
+    // Native select chrome is removed so WebKit (desktop webview) honors the field padding.
+    for (const label of ['Paid by', 'Category']) {
+      const select = screen.getByRole('combobox', { name: label });
+      expect(select).toHaveClass('md-select');
+      const chevron = select.parentElement!.querySelector('.md-select-chevron');
+      expect(chevron).toHaveAttribute('data-icon', 'chevron-down');
+      expect(chevron).toHaveAttribute('aria-hidden', 'true');
+    }
     await user.click(screen.getByRole('radio', { name: 'Fixed amount' }));
     expect(screen.getByLabelText('Tip amount').nextElementSibling).toHaveClass('md-field-label');
     expect(screen.getByLabelText('Tip amount')).toHaveAttribute('placeholder', ' ');

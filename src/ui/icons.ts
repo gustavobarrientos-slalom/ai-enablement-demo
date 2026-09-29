@@ -7,6 +7,7 @@ import {
   faCalendarDay,
   faCar,
   faCheck,
+  faChevronDown,
   faChevronRight,
   faCircleCheck,
   faCircleInfo,
@@ -57,6 +58,7 @@ library.add(
   faBed,
   faTicket,
   faTag,
+  faChevronDown,
   faChevronRight,
   faXmark,
 );
@@ -82,6 +84,7 @@ export {
   faCalendarDay,
   faCar,
   faCheck,
+  faChevronDown,
   faChevronRight,
   faCircleCheck,
   faCircleHalfStroke,

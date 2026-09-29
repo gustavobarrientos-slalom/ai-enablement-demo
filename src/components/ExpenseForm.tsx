@@ -6,7 +6,7 @@ import { buildCustomShares, splitDifference } from '../domain/split';
 import type { AppError, Category, ExpenseDraft, Participant } from '../domain/types';
 import { formatCents } from '../ui/currency';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { CATEGORY_ICONS } from '../ui/icons';
+import { CATEGORY_ICONS, faChevronDown } from '../ui/icons';
 import {
   CATEGORY_LABELS,
   ERROR_MESSAGES,
@@ -322,7 +322,7 @@ export function ExpenseForm({
             value={draft.payerId}
             onChange={(event) => update({ payerId: event.target.value })}
             {...fieldProps('payer')}
-            className="mobile-target md-field"
+            className="mobile-target md-field md-select"
           >
             {participants.map((participant) => (
               <option key={participant.id} value={participant.id}>
@@ -331,6 +331,7 @@ export function ExpenseForm({
             ))}
           </select>
           <label htmlFor={`${formId}-payer`} className="md-field-label">Paid by</label>
+          <FontAwesomeIcon icon={faChevronDown} aria-hidden="true" className="md-select-chevron" />
         </div>
         {errorMessage('payer')}
       </div>
@@ -348,7 +349,7 @@ export function ExpenseForm({
               value={draft.category}
               onChange={(event) => update({ category: event.target.value as Category })}
               {...fieldProps('category')}
-              className="mobile-target md-field"
+              className="mobile-target md-field md-select"
             >
               {CATEGORIES.map((category) => (
                 <option key={category} value={category}>
@@ -357,6 +358,7 @@ export function ExpenseForm({
               ))}
             </select>
             <label htmlFor={`${formId}-category`} className="md-field-label">Category</label>
+            <FontAwesomeIcon icon={faChevronDown} aria-hidden="true" className="md-select-chevron" />
           </div>
         </div>
         {errorMessage('category')}
