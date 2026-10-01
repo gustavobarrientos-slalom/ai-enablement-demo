@@ -73,7 +73,7 @@ describe('event sharing', () => {
     expect(screen.getByRole('heading', { name: 'Events' })).toBeInTheDocument();
   });
 
-  it('copies a hash link with no event data in the query string', async () => {
+  it('opens share options without copying, then copies the hash link', async () => {
     const user = userEvent.setup();
     createEvent('Dinner');
     useAppStore.getState().addParticipant('Ana');
@@ -130,6 +130,9 @@ describe('event sharing', () => {
     expect(shareButton.querySelector('svg')).toHaveAttribute('data-icon', 'share-from-square');
     await user.click(screen.getByRole('button', { name: 'Share' }));
 
+    expect(screen.getByRole('dialog', { name: 'Share event' })).toBeInTheDocument();
+    expect(writeText).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Copy link' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
     const copiedUrl = new URL(String(writeText.mock.calls[0]?.[0]));
     expect(copiedUrl.pathname).toBe('/ai-enablement-demo/');
@@ -146,9 +149,11 @@ describe('event sharing', () => {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
+
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Share' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
     await act(async () => {
       await vi.dynamicImportSettled();
     });
@@ -159,6 +164,29 @@ describe('event sharing', () => {
 
     expect(screen.queryByRole('status')).toBeNull();
     vi.useRealTimers();
+  });
+
+  it('shows a locally generated QR code from the same share URL', async () => {
+    const user = userEvent.setup();
+    createEvent('Dinner');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Share' }));
+    await user.click(screen.getByRole('button', { name: 'Show QR code' }));
+    const qr = await screen.findByRole('img', { name: 'QR code for Dinner' });
+    expect(qr).toHaveClass('min-w-[240px]');
+    expect(qr.nextElementSibling).toHaveTextContent('Dinner');
+    expect(screen.queryByRole('button', { name: 'Copy link' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close QR code' }));
+    await user.click(screen.getByRole('button', { name: 'Share' }));
+    await user.click(screen.getByRole('button', { name: 'Copy link' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(String(writeText.mock.calls[0]?.[0])).toContain('#share=');
   });
 
   it('imports a valid link as a new active event and clears the hash', async () => {

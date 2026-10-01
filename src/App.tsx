@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { decodeShare, encodeShare } from './domain/share';
 import { EventsHome } from './components/EventsHome';
@@ -21,6 +21,7 @@ import {
   LINK_COPIED,
 } from './ui/messages';
 import { faShareFromSquare } from './ui/icons';
+import { ShareSheet } from './components/ShareSheet';
 
 export function App() {
   const activeEvent = useAppStore(selectActiveEvent);
@@ -34,6 +35,7 @@ export function App() {
   const reducedMotion = usePrefersReducedMotion();
   const [activeTab, setActiveTab] = useState<TabId>('group');
   const [showContacts, setShowContacts] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const disabledTabs: TabId[] = isGroupValid ? [] : ['expenses', 'settlement'];
 
   useEffect(() => {
@@ -105,21 +107,26 @@ export function App() {
     [],
   );
 
-  async function shareActiveEvent(): Promise<void> {
-    if (!activeEvent) {
-      return;
-    }
+  const activeShareUrl = useMemo(
+    () => activeEvent
+      ? buildShareUrl(getShareBaseUrl(), encodeShare(activeEvent))
+      : null,
+    [activeEvent],
+  );
 
-    const url = buildShareUrl(getShareBaseUrl(), encodeShare(activeEvent));
-
-    if (await copyText(url)) {
+  async function copyActiveShareUrl(): Promise<boolean> {
+    if (!activeShareUrl) return false;
+    if (await copyText(activeShareUrl)) {
       showMessage(LINK_COPIED);
+      return true;
     }
+    return false;
   }
 
   return (
-    <AppShell
-      appBar={<AppBar
+    <>
+      <AppShell
+        appBar={<AppBar
         title={activeEvent?.name ?? exiting?.name ?? (showContacts ? 'Contacts' : 'Split')}
         subtitle={activeEvent ? EVENT_STATUS_LABELS[activeEvent.status] : exiting?.status ?? (showContacts ? 'Your contacts' : 'Your events')}
         onBack={activeEvent && !exiting ? handleBack : showContacts ? () => setShowContacts(false) : undefined}
@@ -129,7 +136,7 @@ export function App() {
             type="button"
             aria-label="Share"
             title="Share"
-            onClick={shareActiveEvent}
+            onClick={() => setShareOpen(true)}
             className="mobile-target md-icon-button shrink-0"
           >
             <FontAwesomeIcon icon={faShareFromSquare} />
@@ -177,7 +184,17 @@ export function App() {
         ? <TabBar activeTab={activeTab} disabledTabs={disabledTabs} onSelect={setActiveTab} />
         : undefined}
       hasPrimaryAction={(!activeEvent && !showContacts) || Boolean(isEditable && activeTab !== 'settlement' && !exiting)}
-    />
+      />
+      {activeEvent && activeShareUrl && (
+        <ShareSheet
+          open={shareOpen}
+          name={activeEvent.name}
+          url={activeShareUrl}
+          onClose={() => setShareOpen(false)}
+          onCopy={copyActiveShareUrl}
+        />
+      )}
+    </>
   );
 }
 

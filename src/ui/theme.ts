@@ -6,6 +6,12 @@ export const THEME_PREFERENCES = ['system', 'light', 'dark'] as const;
 
 export { THEME_COLORS };
 
+/** Theme-invariant colors used for scanner-readable QR output. */
+export const QR_COLORS = {
+  dark: '#000000',
+  light: '#FFFFFF',
+} as const;
+
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
 export type EffectiveTheme = Exclude<ThemePreference, 'system'>;
 

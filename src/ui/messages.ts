@@ -65,6 +65,11 @@ export const ERROR_MESSAGES: Record<AppError, string> = {
 export const LINK_COPIED = 'Link copied';
 export const EVENT_IMPORTED = 'Event imported';
 export const INVALID_SHARE_LINK = 'This link is invalid';
+export const SHARE_EVENT_TITLE = 'Share event';
+export const COPY_LINK = 'Copy link';
+export const SHOW_QR_CODE = 'Show QR code';
+export const QR_CODE_TITLE = 'QR code';
+export const QR_TOO_LARGE = 'Too much data for a QR code — use the link instead';
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   food: 'Food',
